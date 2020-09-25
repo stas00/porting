@@ -184,10 +184,11 @@ model = torch.hub.load('pytorch/fairseq', 'transformer.wmt19.en-ru', checkpoint_
 
 # encode step by step
 tokens = model.tokenize(sentence)
-"tokenize ", len(tokens), "-".join(tokens)
+"tokenize ", tokens
+
 bpe = model.apply_bpe(tokens)
-bpe_str = str(bpe).split()
-"apply_bpe: ", len(bpe_str), bpe_str
+"apply_bpe: ", bpe
+
 bin = model.binarize(bpe)
 "binarize: ", len(bin), bin
 
@@ -199,8 +200,8 @@ expected = model.encode(sentence)
 gives us:
 
 ```
-('tokenize ', 25, 'M-a-c-h-i-n-e- -L-e-a-r-n-i-n-g- -i-s- -g-r-e-a-t')
-('apply_bpe: ', 6, ['Mach@@', 'ine', 'Lear@@', 'ning', 'is', 'great'])
+('tokenize ', 'Machine Learning is great')
+('apply_bpe: ', 'Mach@@ ine Lear@@ ning is great')
 ('binarize: ', 7, tensor([10217,  1419,     3,  2515,    21,  1054,     2]))
 ('encode:   ', 7, tensor([10217,  1419,     3,  2515,    21,  1054,     2]))
 ```
@@ -208,8 +209,8 @@ gives us:
 You can see that `model.encode` does `tokenize+apply_bpe+binarize` - we get the same output. 
 
 The steps were:
-1. tokenize: this tokenizer split the 4-word sentence into letters - 25 in total
-2. apply_bpe: bpe merged the letters into words and sub-words according to its `bpecodes` file supplied by the tokenizer - we get 6 BPE chunks
+1. tokenize: normally it'd escape apostrophes and do other pre-processing, in this example it just returned the input as it was
+2. apply_bpe: bpe split the input into words and sub-words according to its `bpecodes` file supplied by the tokenizer - we get 6 BPE chunks
 3. binarize: this simply remaps the bpe chunks from the previous step into their corresponding ids in the vocabulary (which is also downloaded with the model)
 
 You can refer to [this notebook](./nbs/tokenizer.ipynb) to see more details.
@@ -299,17 +300,292 @@ One confusing thing is that if you remember the `apply_bpe` output was:
 ```
 Instead of marking endings of the words with `</w>`, it leaves those as is, but instead marks words that were not the endings with `@@`. This is probably so, because `fastBPE` implementation is used by fairseq and that's how it does things. We will make these things consistent during porting since we don't use `fastBPE`.
 
+One last thing to check is the remapping of the BPE codes to vocabulary ids. To repeat, we had:
+
+```
+('apply_bpe: ', 'Mach@@ ine Lear@@ ning is great')
+('binarize: ', 7, tensor([10217,  1419,     3,  2515,    21,  1054,     2]))
+```
+
+`2` - the last token id is a `eos` (end of stream) token. It's used to indicate that the end of input.
+
+And then `Mach@@` gets remapped to `10217`, and `ine` to `1419`. 
+
+Let's check that the dictionary file is in agreement:
+
+```
+# grep ^Mach@@ ~/porting/pytorch_fairseq_model/dict.en.txt
+Mach@@ 6410
+# grep "^ine " ~/porting/pytorch_fairseq_model/dict.en.txt
+ine 88376
+```
+Wait a second - those aren't the ids that we got after `binarize`, which should be `10217` and `1419` correspondingly. It took some digging to find out that the vocab file ids aren't the ids used by the model and that internally it remaps them to new ids once the vocab file is loaded. Luckily I didn't need to figure out how exactly it was done. Instead, I just used `fairseq.data.dictionary.Dictionary.load` to load the dict, which included all the re-mappings, - and then saved the final dictionary. I found out about that `Dictionary` class by running fairseq code with debugger.
+
+Here is the relevant part of the conversion script:
+
+```
+from fairseq.data.dictionary import Dictionary
+def rewrite_dict_keys(d):
+    # (1) remove word breaking symbol, (2) add word ending symbol where the word is not broken up,
+    # e.g.: d = {'le@@': 5, 'tt@@': 6, 'er': 7} => {'le': 5, 'tt': 6, 'er</w>': 7}
+    d2 = dict((re.sub(r"@@$", "", k), v) if k.endswith("@@") else (re.sub(r"$", "</w>", k), v) for k, v in d.items())
+    keep_keys = "<s> <pad> </s> <unk>".split()
+    # restore the special tokens
+    for k in keep_keys:
+        del d2[f"{k}</w>"]
+        d2[k] = d[k]  # restore
+    return d2
+
+src_dict_file = os.path.join(fsmt_folder_path, f"dict.{src_lang}.txt")
+src_dict = Dictionary.load(src_dict_file)
+src_vocab = rewrite_dict_keys(src_dict.indices)
+src_vocab_size = len(src_vocab)
+src_vocab_file = os.path.join(pytorch_dump_folder_path, "vocab-src.json")
+print(f"Generating {src_vocab_file}")
+with open(src_vocab_file, "w", encoding="utf-8") as f:
+    f.write(json.dumps(src_vocab, ensure_ascii=False, indent=json_indent))
+# we did the same for the target dict - omitted quoting it here
+# and we also had to save `bpecodes`, it's called `merges.txt` in the transformers land
+```
+
+After running the conversion script, let's check the converted dictionary:
+
+```
+grep '"Mach"' /code/huggingface/transformers-fair-wmt/data/wmt19-en-ru/vocab-src.json
+  "Mach": 10217,
+grep '"ine</w>":' /code/huggingface/transformers-fair-wmt/data/wmt19-en-ru/vocab-src.json
+  "ine</w>": 1419,
+```
+We have the correct ids in the `transformers` version of the vocab file.
+
+As you can see I also had to re-write the vocabularies to match the `transformers` BPE implementation. We have to change:
+```
+['Mach@@', 'ine', 'Lear@@', 'ning', 'is', 'great']
+```
+to:
+```
+['Mach', 'ine</w>', 'Lear', 'ning</w>', 'is</w>', 'great</w>']
+```
+Instead of marking chunks that are segments of a word, with the exception of the last segment, we mark segments or words that are the final segment. One can easily go from one style of encoding to another and back.
+
+This successfully completed the porting of the first part of the model files. You can see the final version of the code [here](https://github.com/huggingface/transformers/blob/129fdae04033fe4adfe013b734deaec6ec34ae2e/src/transformers/convert_fsmt_original_pytorch_checkpoint_to_pytorch.py#L128).
+
+If you're curious to look deeper there are more tinkering bits in [this notebook](./nbs/tokenizer-dev.ipynb).
+
 ### Porting tokenizer's encoder to transformers
 
 `transformers` can't rely on [`fastBPE`](https://github.com/glample/fastBPE) since the latter requires a C-compiler, but luckly someone already implemented a python version of the same in [`tokenization_xlm.py`](https://github.com/huggingface/transformers/blob/master/src/transformers/tokenization_xlm.py)
 
-So I just copied it to `src/transformers/tokenization_fsmt.py` and with very few changes I had a working encoder part of the tokenizer. 
+So I just copied it to `src/transformers/tokenization_fsmt.py` and with very few changes I had a working encoder part of the tokenizer. There was a lot of code that didn't apply to the languages I needed to support, so I removed that code.
+
+Since I needed 2 different vocabularies, instead of one here in tokenizer and everywhere else I had to change the code to support both. So for example I had to override the super-class's methods:
+
+```
+    def get_vocab(self) -> Dict[str, int]:
+        return self.get_src_vocab()
+
+    @property
+    def vocab_size(self) -> int:
+        return self.src_vocab_size
+```
+
+Since fairseq didn't use `bos` (beginning of script) tokens, I also had to change the code to not include those:
+
+```
+-            return bos + token_ids_0 + sep
+-        return bos + token_ids_0 + sep + token_ids_1 + sep
++            return token_ids_0 + sep
++        return token_ids_0 + sep + token_ids_1 + sep
+```
+
+If you're following along, and would like to see all the changes I did to the original `tokenization_xlm.py`, you can do:
+```
+cp tokenization_xlm.py tokenization_orig.py
+perl -pi -e 's|XLM|FSMT|g; s|xlm|fsmt|g;' tokenization_orig.py
+diff -u tokenization_orig.py tokenization_fsmt.py  | less
+```
+Just make sure you're checking out the repository [around the time fsmt was released](https://github.com/huggingface/transformers/tree/129fdae04033fe4adfe013b734deaec6ec34ae2e), since the 2 files could have diverged since then.
+
+The final stage was to run through a bunch of inputs and compare that the ported tokenizer produced the same ids as the original. You can see this is done in [this notebook](./nbs/tokenizer.ipynb).
+
+This is the script I was running repeatedly and trying to figure out how to make the outputs match.
+
+This is how most of the porting process went, I'd take a small feature, run it the fairseq-way, get the outputs, do the same with the `transformers` code, try to make the outputs match - fiddle with the code until it does, then try a different kind of input make sure it produces the same outputs, and so on, until all inputs match.
 
 ## Model porting
+
+Having had a relatively quick success with porting the tokenizer (obviously, thanks to most of the code being there already), the next stage was much more complex. I had to break it down into multiple sub-tasks. I had to 
+1. port the model weights
+2. make `generate` work first for a single beam
+3. and then multiple beams.
+
+I first researched which of the existing architectures are the closest to my needs. It was BART that fit the closest, so I went ahead and did:
+
+```
+cp modeling_bart.py modeling_fsmt.py
+perl -pi -e 's|Bart|FSMT|ig; s|bart|fsmt|g;' modeling_fsmt.py
+```
+
+### Porting weights and configuration
+
+The first thing I did is to look at what was inside the publicly shared checkpoint. [This notebook](./nbs/config.ipynb) shows what I did there.
+
+The first thing I discovered that there were 4 checkpoints in there. I had no idea what to do about it, so I started with a simpler job of picking just the first checkpoint. Later I discovered that fairseq used all 4 checkpoints in an ensembe to get the best results, and that `transformers` currently doesn't support that. When the porting was complete and I was able to measure the performance scores, I found that `model4.pt` checkpoint provided the best score. But during the porting performance doesn't matter at all. Since I was using only one checkpoint it was crucial that when I was comparing outputs, I had fairseq also use just one and the same checkpoint.
+
+I used a slightly different API for using fairseq:
+```
+from fairseq import hub_utils
+#checkpoint_file = 'model1.pt:model2.pt:model3.pt:model4.pt'
+checkpoint_file = 'model1.pt'
+model_name_or_path = 'transformer.wmt19.ru-en'
+data_name_or_path = '.'
+cls = fairseq.model_parallel.models.transformer.ModelParallelTransformerModel
+models = cls.hub_models()
+kwargs = {'bpe': 'fastbpe', 'tokenizer': 'moses'}
+ru2en = hub_utils.from_pretrained(
+            model_name_or_path,
+            checkpoint_file,
+            data_name_or_path,
+            archive_map=models,
+            **kwargs
+        )
+```
+First I looked at the model:
+```
+ru2en["models"][0]
+```
+```
+TransformerModel(
+  (encoder): TransformerEncoder(
+    (dropout_module): FairseqDropout()
+    (embed_tokens): Embedding(31232, 1024, padding_idx=1)
+    (embed_positions): SinusoidalPositionalEmbedding()
+    (layers): ModuleList(
+      (0): TransformerEncoderLayer(
+        (self_attn): MultiheadAttention(
+          (dropout_module): FairseqDropout()
+          (k_proj): Linear(in_features=1024, out_features=1024, bias=True)
+          (v_proj): Linear(in_features=1024, out_features=1024, bias=True)
+          (q_proj): Linear(in_features=1024, out_features=1024, bias=True)
+          (out_proj): Linear(in_features=1024, out_features=1024, bias=True)
+        )
+      [...]
+# full output is in the notebook
+```
+which looks very similar to BART's architecture, with some slight differences in a few layers - some were added, others removed. So this was great news as I didn't have to re-invent the wheel but to only tweak a well-working design.
+
+Note that in the code sample above I'm not using `torch.load()` to load the `state_dict`. This is what I initially did and the result was most puzzling - I was missing `self_attn.(k|q|v)_proj` weights and instead had a single `self_attn.in_proj`. When I tried loading the model using fairseq API, it fixed things up - apparently that model was old and was using an old architecture that had one set of weights for k/v/q and the newer architecture has them separate. When fairseq loads this old model, it rewrites the weights to match the modern architecture.
+
+I also used [this notebook](./nbs/visualize-models.ipynb) to compare the `state_dict`s visually. In that notebook you will also see that fairseq fetches a 2.2GB-worth of data in `last_optimizer_state`, which we can safely ignore, and have an x3 times smaller final model size.
+
+In the conversion script I also had to remove some `state_dict` keys, which we weren't going to use, e.g. `model.encoder.version`, `model.model` and a few others.
+
+Next we look at the configuration args:
+```
+args = dict(vars(ru2en["args"]))
+pprint(args)
+```
+```
+'activation_dropout': 0.0,
+ 'activation_fn': 'relu',
+ 'adam_betas': '(0.9, 0.98)',
+ 'adam_eps': 1e-08,
+ 'adaptive_input': False,
+ 'adaptive_softmax_cutoff': None,
+ 'adaptive_softmax_dropout': 0,
+ 'arch': 'transformer_wmt_en_de_big',
+ 'attention_dropout': 0.1,
+ 'bpe': 'fastbpe',
+ [... full output is in the notebook ...] 
+```
+ok, we will copy those to configure the model. I had to rename some of the argument names, wherever `transformers` used different names for the same configuration setting.  So the re-map of configuration looks as following:
+
+```
+    model_conf = {
+        "architectures": ["FSMTForConditionalGeneration"],
+        "model_type": "fsmt",
+        "activation_dropout": args["activation_dropout"],
+        "activation_function": "relu",
+        "attention_dropout": args["attention_dropout"],
+        "d_model": args["decoder_embed_dim"],
+        "dropout": args["dropout"],
+        "init_std": 0.02,
+        "max_position_embeddings": args["max_source_positions"],
+        "num_hidden_layers": args["encoder_layers"],
+        "src_vocab_size": src_vocab_size,
+        "tgt_vocab_size": tgt_vocab_size,
+        "langs": [src_lang, tgt_lang],
+        [...]
+        "bos_token_id": 0,
+        "pad_token_id": 1,
+        "eos_token_id": 2,
+        "is_encoder_decoder": True,
+        "scale_embedding": not args["no_scale_embedding"],
+        "tie_word_embeddings": args["share_all_embeddings"],
+    }
+```
+All that remains is to save the configuration into `config.json` and create a new `state_dict` dump into `pytorch.dump`:
+
+```
+    print(f"Generating {fsmt_tokenizer_config_file}")
+    with open(fsmt_tokenizer_config_file, "w", encoding="utf-8") as f:
+        f.write(json.dumps(tokenizer_conf, ensure_ascii=False, indent=json_indent))
+    [...]
+    print(f"Generating {pytorch_weights_dump_path}")
+    torch.save(model_state_dict, pytorch_weights_dump_path)
+```
+
+We have the configuration and the model `state_dict` ported - yay!
+
+You will find the final conversion code [here](https://github.com/huggingface/transformers/blob/129fdae04033fe4adfe013b734deaec6ec34ae2e/src/transformers/convert_fsmt_original_pytorch_checkpoint_to_pytorch.py#L162).
+
+### Porting the architecture code
+
+Now that we have the model weights and the model configuration ported, we *just* need to adjust the code copied from  `modeling_bart.py` to match fairseq.
+
+The first step was to take a sentence, encode it and then feed to the `generate` function - for fairseq and for `transformers`. 
+
+After a few very failing attempts to get somewhere - I quickly realized that with the current level of complexity using `print` as debug will get me nowhere, and neither the basic `pdb` debugger. In order to be efficient and to be able to watch multiple variables and have watches that are code-evaluations I needed a serious visual debugger. I spent a day trying all kinds of debuggers and only when I tried `pycharm` I saw that it was the tool that I needed. It was my first time using `pycharm`, but I quickly figured out how to use it.
+
+Over time I found a great feature in `pycharm` that allowed me to group breakpoints by functionality and I could turn whole groups on or off depending on what I was debugging. For example, here I have beam-search related break-points off and decoder ones on:
+
+![break point group](./images/pycharm-break-point-groups.png)
+
+Now that I have used this debugger to port FSMT, I know that it would have take me many times over to use pdb to do the same - I may have even given it up.
+
+I started with 2 scripts:
+* [fseq-translate](./scripts/fseq-translate.py)
+* [fsmt-translate](./scripts/fsmt-translate.py)
+
+(without the `decode` part first)
+
+running both side by side, stepping through with debugger on each side and comparing values - until I found the first divergence. I then studied the code, made adjustments inside `modeling_fsmt.py`, restarted the script 
 
 
 ## Tokenizer decoder porting
 
+I had to change the original xlm detokenizer's settings to match fairseq's:
+
+```
+-        [...].tokenize(text, return_str=False, escape=False)
++        [...].tokenize(text, return_str=False, escape=True, aggressive_dash_splits=True)
+```
+and I had to change the way BPE was dealt with and also run the outputs through moses detokenizer.
+
+```
+     def convert_tokens_to_string(self, tokens):
+         """ Converts a sequence of tokens (string) in a single string. """
+-        out_string = "".join(tokens).replace("</w>", " ").strip()
+-        return out_string
++
++        # remove BPE
++        tokens = [t.replace(" ", "").replace("</w>", " ") for t in tokens]
++        tokens = "".join(tokens).split()
++        # detokenize
++        text = self.moses_detokenize(tokens, self.tgt_lang)
++        return text
+
+```
 
 ## Optimizations, etc.
 
@@ -328,12 +604,16 @@ torch.save(state_dict["model.encoder.embed_positions.weights"], "output")
 
 ### model cards
 
+## Conclusions
+
+- no model ensemble, but the download size is 1.1GB and not 13GB as in the original. For some reason the original includes the optimizer state saved in the model - so it adds 4x2.2GB almost 9GB of dead weight for those who just want to download the model to use it as is to translate text.
+
 
 ## Notes
 
 ### Autoprint all in Jupyter Notebook
 
-My jupyter notebook is configured to automatically print all expressions, so i don't have to explicitly `print()` them (the default behavior is to print only the last expression). So if you read the outputs in my notebooks they may not the be same as if you were to run them yourself.
+My jupyter notebook is configured to automatically print all expressions, so I don't have to explicitly `print()` them (the default behavior is to print only the last expression of each cell). So if you read the outputs in my notebooks they may not the be same as if you were to run them yourself.
 
 You can achieve the same by adding to `~/.ipython/profile_default/ipython_config.py` (create it if you don't have one):
 
