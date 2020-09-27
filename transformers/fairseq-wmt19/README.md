@@ -397,6 +397,12 @@ Since fairseq didn't use `bos` (beginning of script) tokens, I also had to chang
 +            return token_ids_0 + sep
 +        return token_ids_0 + sep + token_ids_1 + sep
 ```
+fairseq was also escaping characters and performing an aggressive dash splitting, so I had to also change:
+
+```
+-        [...].tokenize(text, return_str=False, escape=False)
++        [...].tokenize(text, return_str=False, escape=True, aggressive_dash_splits=True)
+```
 
 If you're following along, and would like to see all the changes I did to the original `tokenization_xlm.py`, you can do:
 ```
@@ -541,7 +547,7 @@ You will find the final conversion code [here](https://github.com/huggingface/tr
 
 ### Porting the architecture code
 
-Now that we have the model weights and the model configuration ported, we *just* need to adjust the code copied from  `modeling_bart.py` to match fairseq.
+Now that we have the model weights and the model configuration ported, we *just* need to adjust the code copied from  `modeling_bart.py` to match fairseq's functionality.
 
 The first step was to take a sentence, encode it and then feed to the `generate` function - for fairseq and for `transformers`. 
 
@@ -559,18 +565,23 @@ I started with 2 scripts:
 
 (without the `decode` part first)
 
-running both side by side, stepping through with debugger on each side and comparing values - until I found the first divergence. I then studied the code, made adjustments inside `modeling_fsmt.py`, restarted the script 
+running both side by side, stepping through with debugger on each side and comparing values of relevant variables - until I found the first divergence. I then studied the code, made adjustments inside `modeling_fsmt.py`, restarted the debugger, quickly jumped to the point of divergence and re-checked the outputs. This cycle has been repeated multiple times until the outputs matched. 
+
+The first things I had to change is to remove a few layers that weren't used by fairseq and then add some new layers it was using. And then the rest was primarily figuring out when to switch to `src_vocab_size` and when to `tgt_vocab_size` - since in the core modules it's just `vocab_size`, which weren't accounting for a possible model that has 2 dictionaries. Finally, I discovered that a few hyperparameter configurations weren't the same.
+
+I first did this process for the simpler no-beam search, and once the outputs were 100% matching I repeated it with the more complicated beam search. Here, for example, I discovered that fairseq was using the equivalent of `early_stopping=True`, whereas `transformers` has it as `False` by default. When early stopping is enabled it stops looking for new candidates as soon as there are beam size candidates, whereas when it's off, the algorithm stops searching only when it can't find higher probability candidates than what it already had. In their paper fairseq used a huge beam size of 50, which compensates for using early stopping.
 
 
 ## Tokenizer decoder porting
 
-I had to change the original xlm detokenizer's settings to match fairseq's:
+Once I had the ported`generate` produce pretty similar results to fairseq's I next needed to complete the last stage of decoding the outputs into the human readable text. Similar to the encoding process, this one was done in reverse.
 
-```
--        [...].tokenize(text, return_str=False, escape=False)
-+        [...].tokenize(text, return_str=False, escape=True, aggressive_dash_splits=True)
-```
-and I had to change the way BPE was dealt with and also run the outputs through moses detokenizer.
+The steps were:
+1. convert ids into strings
+2. remove BPE encodings 
+3. detokenize - handle escaped characters, etc.
+
+After doing some more debugging here,  I had to change the way BPE was dealt with and also run the outputs through moses detokenizer.
 
 ```
      def convert_tokens_to_string(self, tokens):
@@ -584,25 +595,166 @@ and I had to change the way BPE was dealt with and also run the outputs through 
 +        # detokenize
 +        text = self.moses_detokenize(tokens, self.tgt_lang)
 +        return text
+```
+And all was good.
+
+## Manual testing
+
+Until now I was primarily using my own scripts to do the testing.
+
+Once I had the translator work, I ported the reversed `ru-en` model and wrote two paraphrase scripts: 
+
+* [fseq-paraphrase](./scripts/fseq-paraphrase.py)
+* [fsmt-paraphrase](./scripts/fsmt-paraphrase.py)
+
+Found some more problems with the detokenizer, stepped through with the debugger and made those match.
+
+At this stage no-beam search was producing mostly identical results, but there was still some divergence in the beam search. In order to identify the special cases, I wrote a [fsmt-port-validate.py](./scripts/fsmt-port-validate.py) script that used as inputs `sacrebleu` test data and it run that data through both `fairseq` and `transformers` translation and reported only mismatches. Once I saw the pattern I then was able to fix those issues as well.
+
+
+
+## Porting other models
+
+I next decided to port the `en-de` and `de-en` models. I was surprised to discover that this wasn't built the same way. It had a merged dictionary, so for a moment I felt frustration since I thought I'd now have to do another huge change to support that. But alas, I didn't need to make any changes, as the merged dictionary fit in without needing any changes. I just used 2 identical dictionaries - one as source and another copy as a target.
+
+I wrote another script to test all ported models' basic functionality: [fsmt-test-all.py](./scripts/fsmt-test-all.py).
+
+## Test Coverage
+
+In the test suite most tests that deal with large models are marked as `@slow` and those don't get to run normally on CI (Continual Integration), as they are, well, slow. So we need to also create a tiny model, that has the same structure, but it's small and it has random weights. This tiny model is then can be used to test the ported functionality. It just can't be used for quality testing, since it has just a few weights and thus can't really be trained to do anything practical. [fsmt-make-tiny-model.py](./scripts/fsmt-make-tiny-model.py) creates a tiny model.  The generated model with all of its dict and config files was just 3MB in size. I uploaded to `s3` using `transformers-cli upload` and now I was able to use it in the test suite.
+
+Just like with the code, I started by copying `tests/test_modeling_bart.py` and converting it to use `FSMT`, and then tweaked it to make it to work for the new model.
+
+I then converted a few of my scripts I used for testing into unittests - that was easy. 
+ 
+`transformers` has a huge set of common tests that each model runs through - I had to do some more tweaks to make these tests work for `FSMT` (primarily to adjust for the 2 dictionary setup) and I had to override to skip a few tests that weren't possible to run due to the uniqueness of this model. 
+
+I added one more test that performs a light BLEU evaluation - I used just 8 text inputs for each of the 4 models and measured BLEU scores on those. Here is the [test](https://github.com/huggingface/transformers/blob/129fdae04033fe4adfe013b734deaec6ec34ae2e/examples/seq2seq/test_fsmt_bleu_score.py) and the [script that generated data](https://github.com/huggingface/transformers/blob/129fdae04033fe4adfe013b734deaec6ec34ae2e/examples/seq2seq/test_data/fsmt/build-eval-data.py).
+
+## SinusoidalPositionalEmbedding
+
+`farseq` used a slightly different implementation of `SinusoidalPositionalEmbedding` than the one used by `transformers`. Initially I copied the `fairseq` implementation. But when trying to get the test suite to work I couldn't get the `torchscript` tests to pass. `SinusoidalPositionalEmbedding` was written so that it won't be part of `state_dict` and not get saved with the model weights - all the weights generated by this class are deterministic and not trained. `fairseq` used a trick to make this work transparently by not making its weights a parameter or a buffer, and then during `forward` switching the weight to the correct device. `torchscript` wasn't handling this well as it wanted all the weights to be on the correct device before the first `forward` call.
+
+I had to rewrite the implementation to convert it to a normal `nn.Embedding` subclass and then add functionality not to save the weights during `save_pretrained()` and not to complain if it doesn't find those weights during `from_pretrained()`, when the weights are getting loaded.
+
+## Evaluation
+
+I knew that the ported model was doing quite well based on my manual testing with a large body of text, but I didn't know how well the ported model performed compared to the original. So it was time to do evaluation. 
+
+For the task of translation [BLEU score](https://en.wikipedia.org/wiki/BLEU) is used as an evaluation metric. `transformers`
+has a script [run_eval.py](https://github.com/huggingface/transformers/blob/129fdae04033fe4adfe013b734deaec6ec34ae2e/examples/seq2seq/run_eval.py`) to perform the evaluation.
+
+Here is an evaluation for the `ru-en` pair
 
 ```
+export PAIR=ru-en
+export MODEL=facebook/wmt19-$PAIR
+export DATA_DIR=data/$PAIR
+export SAVE_DIR=data/$PAIR
+export BS=64
+export NUM_BEAMS=5
+export LENGTH_PENALTY=1.1
+mkdir -p $DATA_DIR
+sacrebleu -t wmt19 -l $PAIR --echo src > $DATA_DIR/val.source
+sacrebleu -t wmt19 -l $PAIR --echo ref > $DATA_DIR/val.target
+PYTHONPATH="src:examples/seq2seq" python examples/seq2seq/run_eval.py $MODEL $DATA_DIR/val.source $SAVE_DIR/test_translations.txt --reference_path $DATA_DIR/val.target --score_path $SAVE_DIR/test_bleu.json --bs $BS --task translation --num_beams $NUM_BEAMS --length_penalty $LENGTH_PENALTY --info $MODEL --dump-args
+```
+which took a few minutes to run and returned:
+```
+{'bleu': 39.0498, 'n_obs': 2000, 'runtime': 184, 'seconds_per_sample': 0.092, 'num_beams': 5, 'length_penalty': 1.1, 'info': 'ru-en'}
+```
+You can see that the BLEU score was `39.0498` and that it evaluated using 2000 test inputs, provided by `sacrebleu` using the wmt19 dataset.
 
-## Optimizations, etc.
+Remember, I couldn't use the model ensemble, so I next needed to find the best performing checkpoint. For that purpose I wrote a script [fsmt-bleu-eval-each-chkpt.py](./scripts/fsmt-bleu-eval-each-chkpt.sh) which re-converted the model for each model, run the eval script and report the best one. As a result I knew that `model4.pt` from the original was giving me the best performance.
 
-### much later
+I wasn't getting the same BLEU scores as reported in the original paper, so I next needed to make sure that we are comparing the same things using the same tools. Through asking at the fairseq issue I was given the code that was used by fairseq developers to get their BLEU scores - you will find it [here](./scripts/fseq-reproduce-bleu.sh). But, alas, their method was using a re-ranking approach which wasn't disclosed. Moreover, they evaled on outputs before detokenization and not the real output, which apparently scores better. Bottom line - we weren't scoring in the same way. The paper [A Call for Clarity in Reporting BLEU Scores](https://arxiv.org/abs/1804.08771) invites developers to start using the same method for calculating the metrics (tldr: use `sacrebleu`).
 
-how big are embeddings? some we don't want to save them
+Currently, this ported model is surely slightly behind the original on the BLEU scores, because model ensemble is not used, but it's impossible to tell the exact difference until the same measuring method is used.
+
+## Porting new models
+
+After uploading the 4 fairseq models [here](https://huggingface.co/models?filter=facebook&tag=fsmt) it was then suggested to port 3 wmt16 and 2 wmt19 AllenAI models 1 (Jungo Kasai, et al). The porting was a breeze, I just had to figure out how to put all the source files together as they were spread out through several unrelated archives and conversion worked without a hitch. 
+
+The only issue I discovered after porting is that I was getting a lower BLEU score. Jungo Kasai was very helpful at suggesting that a custom `length_penalty=0.6` was used, and once I plugged that in I was getting much better results.
+
+As a result of this process a new script was written: [run_eval_search.py](https://github.com/huggingface/transformers/blob/129fdae04033fe4adfe013b734deaec6ec34ae2e/examples/seq2seq/run_eval_search.py`) which can be used to search various hyper-params to get the best BLEU scores. Here is an example of its usage:
 
 ```
-model = FSMTForConditionalGeneration.from_pretrained(mname)
-
-import torch
-state_dict = model.state_dict()
-torch.save(state_dict["model.encoder.embed_positions.weights"], "output")
-
+# search space
+export PAIR=ru-en
+export DATA_DIR=data/$PAIR
+export SAVE_DIR=data/$PAIR
+export BS=32
+mkdir -p $DATA_DIR
+sacrebleu -t wmt19 -l $PAIR --echo src > $DATA_DIR/val.source
+sacrebleu -t wmt19 -l $PAIR --echo ref > $DATA_DIR/val.target
+PYTHONPATH="src:examples/seq2seq" python examples/seq2seq/run_eval_search.py stas/wmt19-$PAIR $DATA_DIR/val.source $SAVE_DIR/test_translations.txt --reference_path $DATA_DIR/val.target --score_path $SAVE_DIR/test_bleu.json --bs $BS --task translation --search="num_beams=5:8:11:15 length_penalty=0.6:0.7:0.8:0.9:1.0:1.1 early_stopping=true:false"
 ```
+
+Here it searches though all the combinations of `num_beams`, `length_penalty` and `early_stopping`.
+
+Once finished executing it reports:
+```
+
+bleu  | num_beams | length_penalty | early_stopping
+----- | --------- | -------------- | --------------
+39.20 |        15 |            1.1 |              0
+39.13 |        11 |            1.1 |              0
+39.05 |         5 |            1.1 |              0
+39.05 |         8 |            1.1 |              0
+39.03 |        15 |            1.0 |              0
+39.00 |        11 |            1.0 |              0
+38.93 |         8 |            1.0 |              0
+38.92 |        15 |            1.1 |              1
+[...]
+```
+You can see clearly that a wider beam size delivers better results. And in the case of `transformers` `early_stopping=False` performs better (in fairseq they use `early_stopping=True` equivalent).
+
+So for the 5 new models I used this script to find the best default parameters and I used those when converting the model. The user can still override those when running `generate()`, but why not give the best defaults.
+
+You will find the 5 ported AllenAI models [here](https://huggingface.co/models?filter=allenai&tag=fsmt).
+
+## More scripts
+
+As each ported group of models has its own nuances, I made dedicated scripts to each one of them, so that it will be easy to re-build things in the future or to create new scripts to convert new models. You will find all the conversion, evaluation, and other scripts [here](https://github.com/huggingface/transformers/blob/129fdae04033fe4adfe013b734deaec6ec34ae2e/scripts/fsmt/).
+
+
 
 ### model cards
+
+One other important thing is that it's not enough to port a model and make it available to others. One needs to provide information on how to use it, nuances about hyper parameters, sources of datasets, evaluation metrics, etc. This is all done by creating model cards, which is just a `README.md` file, that start with some metadata that is used by the models website, followed by all the useful information that can be shared. 
+
+For example, the [facebook/wmt19-en-ru model card]
+(https://github.com/huggingface/transformers/tree/129fdae04033fe4adfe013b734deaec6ec34ae2e/model_cards/facebook/wmt19-en-ru/README.md). Here is its top:
+
+
+```
+---
+language: 
+- en
+- ru
+thumbnail:
+tags:
+- translation
+- wmt19
+- facebook
+license: apache-2.0
+datasets:
+- wmt19
+metrics:
+- bleu
+---
+
+# FSMT
+
+## Model description
+
+This is a ported version of [fairseq wmt19 transformer](https://github.com/pytorch/fairseq/blob/master/examples/wmt19/README.md) for en-ru.
+[...]
+```
+
+As you can see we define the languages, tags, license, datasets, and metrics. There is a full guide for writing these at [Model sharing and uploading](https://huggingface.co/transformers/model_sharing.html#add-a-model-card). The rest is the markdown document describing the model and its nuances.
+
 
 ## Conclusions
 

@@ -39,6 +39,8 @@ for src, tgt in pairs:
     # checkpoint_file = 'checkpoint_best.pt'
     # model = torch.hub.load('pytorch/fairseq', mname, checkpoint_file=checkpoint_file)
 
+
+
     for s in text:
         encoded = model.encode(s)
         #print(encoded)
@@ -62,3 +64,12 @@ for src, tgt in pairs:
 
 
 
+# a way to run a custom model that is not on torch.hub
+# from fairseq.models.transformer import TransformerModel
+# model_dir = <PATH_TO_MY_MODEL_DIR>
+# en2de = TransformerModel.from_pretrained(model_dir, checkpoint_file='checkpoint_top5_average.pt',
+#     data_name_or_path=model_dir, bpe='subword_nmt', bpe_codes=model_dir+'bpecodes', tokenizer='moses')
+# text = 'Machine learning is great, isn't it?'
+# en2de.translate(text)
+# text = ["Machine learning is great, isn't it?", "Everyone should learn machine learning."]
+# en2de.translate(text)
