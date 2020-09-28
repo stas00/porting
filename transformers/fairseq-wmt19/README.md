@@ -63,22 +63,22 @@ there are other files that need to be modified as well, we will talk about those
 
 ## Conversion
 
-One of the most important parts of the porting process is creating the conversion script. It will take all the available source data provided by the original developer of the model, which includes a checkpoint with pre-trained weights, model and training configuration details, dictionaries and tokenizer support files, and convert them into a new set of files supported by `transformers`. You will find the final conversion script here: [src/transformers/convert_fsmt_original_pytorch_checkpoint_to_pytorch.py](https://github.com/huggingface/transformers/blob/129fdae04033fe4adfe013b734deaec6ec34ae2e/src/transformers/convert_fsmt_original_pytorch_checkpoint_to_pytorch.py)
+One of the most important parts of the porting process is to create a script that will take all the available source data provided by the original developer of the model, which includes a checkpoint with pre-trained weights, model and training configuration details, dictionaries and tokenizer support files, and convert them into a new set of model files supported by `transformers`. You will find the final conversion script here: [src/transformers/convert_fsmt_original_pytorch_checkpoint_to_pytorch.py](https://github.com/huggingface/transformers/blob/129fdae04033fe4adfe013b734deaec6ec34ae2e/src/transformers/convert_fsmt_original_pytorch_checkpoint_to_pytorch.py)
 
-I started by copying one of the existing conversion scripts, gutted most of it out and then gradually added parts to it as I was porting.
+I started this process by copying one of the existing conversion scripts `src/transformers/convert_bart_original_pytorch_checkpoint_to_pytorch.py`, gutted most of it out and then gradually added parts to it as I was porting.
 
-During the development I was testing all my code against a local copy of the converted model, and only at the very end when everything was ready I uploaded it to s3 and then continued testing against the online version.
+During the development I was testing all my code against a local copy of the converted model files, and only at the very end when everything was ready I uploaded the files to s3 and then continued testing against the online version.
 
 ## fairseq model and its support files
 
-Let's first look at what data we get with the `fairseq` model. We are going to use the convenient `torch.hub` API, which makes it very easy to deploy the models submitted to that hub:
+Let's first look at what data we get with the `fairseq` pre-trained model. We are going to use the convenient `torch.hub` API, which makes it very easy to deploy models submitted to [that hub](https://pytorch.org/hub/):
 ```
 import torch
 torch.hub.load('pytorch/fairseq', 'transformer.wmt19.en-ru', checkpoint_file='model4.pt', tokenizer='moses', bpe='fastbpe')
 ```
-This code downloads the pre-trained model and its support files. 
+This code downloads the pre-trained model and its support files. I found this information at the page corresponding to [fairseq](https://pytorch.org/hub/pytorch_fairseq_translation/) on the pytorch hub.
 
-To see what's inside we have to hunt down the downloaded files in the `~/.cache` folder.
+To see what's inside the downloaded files, we have to first hunt down the right folder under the `~/.cache`.
 
 ```
 ls -1 ~/.cache/torch/hub/pytorch_fairseq/
@@ -88,8 +88,9 @@ shows:
 15bca559d0277eb5c17149cc7e808459c6e307e5dfbb296d0cf1cfe89bb665d7.ded47c1b3054e7b2d78c0b86297f36a170b7d2e7980d8c29003634eb58d973d9
 15bca559d0277eb5c17149cc7e808459c6e307e5dfbb296d0cf1cfe89bb665d7.ded47c1b3054e7b2d78c0b86297f36a170b7d2e7980d8c29003634eb58d973d9.json
 ```
+You may have more than one entry there if you have been using the `hub` for other models.
 
-Let's make a symlink so that we can easily refer to that obscured cache folder down the road:
+Let's make a symlink so that we can easily refer to that obscured cache folder name down the road:
 
 ```
 ln -s /code/data/cache/torch/hub/pytorch_fairseq/15bca559d0277eb5c17149cc7e808459c6e307e5dfbb296d0cf1cfe89bb665d7.ded47c1b3054e7b2d78c0b86297f36a170b7d2e7980d8c29003634eb58d973d9 ~/porting/pytorch_fairseq_model
@@ -110,7 +111,7 @@ total 13646584
 -rw-rw-r-- 1 stas stas 3493170386 Sep  8 21:29 model4.pt
 ```
 we have:
-1. `model*.pt` - 4 checkpoints (pytorch `state_dict` with all the pretrained weights, and various other things)
+1. `model*.pt` - 4 checkpoints (pytorch `state_dict` with all the pre-trained weights, and various other things)
 2. `dict.*.txt` - source and target dictionaries
 3. `bpecodes` - special map file used by the tokenizer
 
@@ -118,11 +119,11 @@ We are going to investigate each of these files in the following sections.
 
 ## How translation systems work
 
-Here is a bit of an introduction to how computers translate text nowadays.
+Here is a very brief introduction to how computers translate text nowadays.
 
 Computers can't read text, but can only handle numbers. So when working with text we have to map one or more letters into numbers, and hand those to a computer program. When the program completes it too returns  numbers, which we need to convert back into text. 
 
-Let's start with two sentences in Russian and English:
+Let's start with two sentences in Russian and English and assign a unique number to each word:
 ```
 я  люблю следовательно я  существую
 10 11    12            10 13
@@ -131,37 +132,41 @@ I  love therefore I  am
 20 21   22        20 23
 ```
 
-Let's assign a unique number to each word. The numbers starting with 10 are a map of Russian words to unique numbers. The numbers starting with 20 are a different map for English words. If you don't speak Russian, you can still see that the word `я` repeats twice in the sentence and it gets the same number 10 associated with it. Same goes for `I` (20).
+The numbers starting with 10 map Russian words to unique numbers. The numbers starting with 20 do the same for English words. If you don't speak Russian, you can still see that the word `я` repeats twice in the sentence and it gets the same number 10 associated with it. Same goes for `I` (20), which is already repeated twice.
 
 A translation system works in the following stages:
 
 ```
 1. [я люблю следовательно я существую] # tokenize sentence into words
-2. [10 11 12 10 13]                    # look up words in the input dictionary
+2. [10 11 12 10 13]                    # look up words in the input dictionary and convert to ids
 3. [black box]                         # machine learning system magic
-4. [20 21 22 20 23]                    # look up numbers in the output dictionary
+4. [20 21 22 20 23]                    # look up numbers in the output dictionary and convert to text
 5. [I love therefore I am]             # detokenize the tokens back into a sentence
 ```
 
 The first two and the last two are each combined so that we get 3 stages:
 
-1. Encoding input: break input text into tokens, create a vocabulary of these tokens and remap each token into a number
+1. Encoding input: break input text into tokens, create a vocabulary of these tokens and remap each token into a unique id in that dictionary
 2. Generating translation: Take input numbers, process them and return output numbers
 3. Decoding output: Take output numbers, look them up in the target language dictionary and convert to text, and finally merge the converted tokens into the translated sentence.
 
+The second stage may return one or several possible translations. In the case of the latter the caller then can choose the most suitable outcome. In this article I will refer to [the beam search algorithm](https://en.wikipedia.org/wiki/Beam_search), which is one of the ways multiple possible results are searched for. And the size of the beam refers to how many results are returned.
+
+If there is only one result that's requested, the model will choose the one with the highest likelihood probability. If multiple results are requested it will return those results sorted by their probabilities.
+
 ## Tokenization
 
-Early systems tokenized sentences into words and punctuation. But since many languages have hundreds of thousands of words it is very taxing to work with huge vocabularies. 
+Early systems tokenized sentences into words and punctuation marks. But since many languages have hundreds of thousands of words, it is very taxing to work with huge vocabularies, as it dramatically increases the compute resource requirements and the length of time to complete the task.
 
-As of 2020 there are quite a few different versions of tokenizers, but most of the recent ones are based on sub-word tokenization - that is instead of breaking the input text into words, it breaks them down into word segments and letters. 
+As of 2020 there are quite a few different versions of tokenizers, but most of the recent ones are based on sub-word tokenization - that is instead of breaking input text down into words, these modern tokenizers break the input text down into word segments and letters. 
 
-Let's see how this approach helps to save space. If we have an input vocabulary of 6 common words: go, going, speak, speaking, sleep, sleeping - with word-level tokenization we end up with 6 tokens. However, if we break these down into: go, go-ing, speak, speak-ing, then we have only 4 tokens in our vocabulary: go, speak, sleep, ing. That's a huge saving. 
+Let's see how this approach helps to save memory requirements (and computation too). If we have an input vocabulary of 6 common words: go, going, speak, speaking, sleep, sleeping - with word-level tokenization we end up with 6 tokens. However, if we break these down into: go, go-ing, speak, speak-ing, etc., then we have only 4 tokens in our vocabulary: go, speak, sleep, ing. That's a huge saving. 
 
-Another important advantage is when dealing with unseen words, that aren't in our vocabulary. For example, let's say our system encounters the word 'grokking' (*), which can't be found in its vocabulary. If we split it into `grokk'-'ing', then the system might not know what to do with the first part of the word, but it gets a useful insight that 'ing' indicates a continuous tense, so it'll be able to produce a better translation.
+Another important advantage of this approach is when dealing with input text words, that aren't in our vocabulary. For example, let's say our system encounters the word 'grokking' (*), which can't be found in its vocabulary. If we split it into `grokk'-'ing', then the system might not know what to do with the first part of the word, but it gets a useful insight that 'ing' indicates a continuous tense, so it'll be able to produce a better translation.
 
-* to grok was coined in 1961 by Robert A. Heinlein in "Stranger in a Strange Land": understand (something) intuitively or by empathy.
+* to grok was coined in 1961 by Robert A. Heinlein in "Stranger in a Strange Land": to understand (something) intuitively or by empathy.
 
-There are many other nuances to why the modern tokenization approach is much more superior than simple word tokenization, which won't be covered in this scope. Most of these systems are very complex to how they do the tokenization, as compared to the simple example of splitting `ing` endings that was just demonstrated.
+There are many other nuances to why the modern tokenization approach is much more superior than simple word tokenization, which won't be covered in the scope of this article. Most of these systems are very complex to how they do the tokenization, as compared to the simple example of splitting `ing` endings that was just demonstrated, but the principle is similar.
 
 
 ## Tokenizer porting
@@ -172,11 +177,11 @@ The first step was to port the encoder part of the tokenizer. The decoder part w
 
 Let's understand how `fairseq`'s tokenizer works.
 
-`fairseq` uses the [Byte Pair Encoding](https://en.wikipedia.org/wiki/Byte_pair_encoding) method (BPE) for tokenization. 
+`fairseq` uses the [Byte Pair Encoding](https://en.wikipedia.org/wiki/Byte_pair_encoding) (BPE) algorithm for tokenization. 
 
-* note: from here on when I refer to `fairseq`, I refer to the specific   [implementation](https://github.com/pytorch/fairseq/tree/master/examples/wmt19) - the project itself has dozens of different implementations of different models.
+* note: from here on when I refer to `fairseq`, I [to this specific model implementation](https://github.com/pytorch/fairseq/tree/master/examples/wmt19) - the `fairseq` project itself has dozens of different implementations of different models.
 
-Let's see what it means:
+Let's see what BPE does:
 
 ```
 import torch
@@ -186,17 +191,17 @@ model = torch.hub.load('pytorch/fairseq', 'transformer.wmt19.en-ru', checkpoint_
 
 # encode step by step
 tokens = model.tokenize(sentence)
-"tokenize ", tokens
+print("tokenize ", tokens)
 
 bpe = model.apply_bpe(tokens)
-"apply_bpe: ", bpe
+print("apply_bpe: ", bpe)
 
 bin = model.binarize(bpe)
-"binarize: ", len(bin), bin
+print("binarize: ", len(bin), bin)
 
 # compare to model.encode - should give us the same output
 expected = model.encode(sentence)
-"encode:   ", len(expected), expected
+print("encode:   ", len(expected), expected)
 ```
 
 gives us:
@@ -208,19 +213,19 @@ gives us:
 ('encode:   ', 7, tensor([10217,  1419,     3,  2515,    21,  1054,     2]))
 ```
 
-You can see that `model.encode` does `tokenize+apply_bpe+binarize` - we get the same output. 
+You can see that `model.encode` does `tokenize+apply_bpe+binarize` - as we get the same output. 
 
 The steps were:
-1. tokenize: normally it'd escape apostrophes and do other pre-processing, in this example it just returned the input as it was
-2. apply_bpe: bpe split the input into words and sub-words according to its `bpecodes` file supplied by the tokenizer - we get 6 BPE chunks
-3. binarize: this simply remaps the bpe chunks from the previous step into their corresponding ids in the vocabulary (which is also downloaded with the model)
+1. `tokenize`: normally it'd escape apostrophes and do other pre-processing, in this example it just returned the input sentence without any changes
+2. `apply_bpe`: BPE splits the input into words and sub-words according to its `bpecodes` file supplied by the tokenizer - we get 6 BPE chunks
+3. `binarize`: this simply remaps the BPE chunks from the previous step into their corresponding ids in the vocabulary (which is also downloaded with the model)
 
 You can refer to [this notebook](./nbs/tokenizer.ipynb) to see more details.
 
 This is a good time to look inside the `bpecodes` file. Here is the top of the file:
 
 ```
-# head -15 ~/porting/pytorch_fairseq_model/bpecodes
+$ head -15 ~/porting/pytorch_fairseq_model/bpecodes
 e n</w> 1423551864
 e r 1300703664
 e r</w> 1142368899
@@ -239,26 +244,26 @@ th e</w> 432025210
 [...]
 ```
 
-The top entries of this file include very frequent short codes. As we will see in a moment the bottom includes the most common multi-letter coders and even full long words. 
+The top entries of this file include very frequent short codes. As we will see in a moment the bottom includes the most common multi-letter sub-words and even full long words. 
 
-A special token `</w>` indicates that the end of the word. So in the few lines above we find:
+A special token `</w>` indicates that the end of the word. So in several lines above we find:
 ```
 e n</w> 1423551864
 e r</w> 1142368899
 th e</w> 432025210
 ```
-If the second column doesn't include `</w>`, it means that it's found in the middle of the word and not the end of it.
+If the second column doesn't include `</w>`, it means that this segment is found in the middle of the word and not the end of it.
 
-The last column informs us of how many times this BPE code has been encountered, and this file is sorted by this column - so the most common BPE codes are on top.
+The last column informs us of how many times this BPE code has been encountered while being trained. This file is sorted by this column - so the most common BPE codes are on top.
 
 By looking at the counts we now know that when this tokenizer was trained it encountered 1,423,551,864 words ending in `en`, 1,142,368,899 words ending in `er` and 432,025,210 words ending in `the`. For the latter it most likely means the actual word `the`, but it would also include words like `lathe`, `loathe`, `tithe`, etc.
 
-This also immediately tells you that this tokenizer was trained on an enormous amount of text!
+These huge numbers also indicate to us that this tokenizer was trained on an enormous amount of text!
 
-If we look at the bottom of the file:
+If we look at the bottom of the same file:
 
 ```
-# tail -10 ~/porting/pytorch_fairseq_model/bpecodes
+$ tail -10 ~/porting/pytorch_fairseq_model/bpecodes
 4 x 109019
 F ische</w> 109018
 sal aries</w> 109012
@@ -270,12 +275,12 @@ doub les</w> 108965
 po ckets</w> 108953
 Gö tz</w> 108943
 ```
-we see complex combinations of sub-words which are still pretty frequent, e.g. `sal aries` for 109,012 times! so it got its own dedicated entry in the `bpecodes` map file.
+we see complex combinations of sub-words which are still pretty frequent, e.g. `sal aries` for 109,012 times! So it got its own dedicated entry in the `bpecodes` map file.
 
-How does `apply_bpe` does its work? By looking up the various combinations of letters in the `bpecodes` map file and when finding the most complex entry that fits it uses that. Going back to our example, we saw that it split `Machine` into: `Mach@@` + `ine` - let's check:
+How `apply_bpe` does its work? By looking up the various combinations of letters in the `bpecodes` map file and when finding the most complex entry that fits it uses that. Going back to our example, we saw that it split `Machine` into: `Mach@@` + `ine` - let's check:
 
 ```
-# grep -i ^mach  ~/porting/pytorch_fairseq_model/bpecodes
+$ grep -i ^mach  ~/porting/pytorch_fairseq_model/bpecodes
 mach ine</w> 463985
 Mach t 376252
 Mach ines</w> 374223
@@ -287,12 +292,12 @@ You can see that it has `mach ine</w>`. We don't see `Mach ine` in there - so it
 Now let's check: `Lear@@` + `ning`
 
 ```
-# grep -i ^lear  ~/porting/pytorch_fairseq_model/bpecodes
+$ grep -i ^lear  ~/porting/pytorch_fairseq_model/bpecodes
 lear n</w> 675290
 lear ned</w> 505087
 lear ning</w> 417623
 ```
-In there you have it `lear ning</w>` is there (again the case is not the same).
+We find `lear ning</w>` is there (again the case is not the same).
 
 Hopefully, you can now see how this works.
 
@@ -300,7 +305,7 @@ One confusing thing is that if you remember the `apply_bpe` output was:
 ```
 ('apply_bpe: ', 6, ['Mach@@', 'ine', 'Lear@@', 'ning', 'is', 'great'])
 ```
-Instead of marking endings of the words with `</w>`, it leaves those as is, but instead marks words that were not the endings with `@@`. This is probably so, because `fastBPE` implementation is used by `fairseq` and that's how it does things. We will make these things consistent during porting since we don't use `fastBPE`.
+Instead of marking endings of the words with `</w>`, it leaves those as is, but, instead, marks words that were not the endings with `@@`. This is probably so, because `fastBPE` implementation is used by `fairseq` and that's how it does things. We will make these things consistent during porting since we don't use `fastBPE`.
 
 One last thing to check is the remapping of the BPE codes to vocabulary ids. To repeat, we had:
 
@@ -309,19 +314,21 @@ One last thing to check is the remapping of the BPE codes to vocabulary ids. To 
 ('binarize: ', 7, tensor([10217,  1419,     3,  2515,    21,  1054,     2]))
 ```
 
-`2` - the last token id is a `eos` (end of stream) token. It's used to indicate that the end of input.
+`2` - the last token id is a `eos` (end of stream) token. It's used to indicate to the model the end of input.
 
 And then `Mach@@` gets remapped to `10217`, and `ine` to `1419`. 
 
 Let's check that the dictionary file is in agreement:
 
 ```
-# grep ^Mach@@ ~/porting/pytorch_fairseq_model/dict.en.txt
+$ grep ^Mach@@ ~/porting/pytorch_fairseq_model/dict.en.txt
 Mach@@ 6410
-# grep "^ine " ~/porting/pytorch_fairseq_model/dict.en.txt
+$ grep "^ine " ~/porting/pytorch_fairseq_model/dict.en.txt
 ine 88376
 ```
-Wait a second - those aren't the ids that we got after `binarize`, which should be `10217` and `1419` correspondingly. It took some digging to find out that the vocab file ids aren't the ids used by the model and that internally it remaps them to new ids once the vocab file is loaded. Luckily I didn't need to figure out how exactly it was done. Instead, I just used `fairseq.data.dictionary.Dictionary.load` to load the dict, which included all the re-mappings, - and then saved the final dictionary. I found out about that `Dictionary` class by running `fairseq` code with debugger.
+Wait a second - those aren't the ids that we got after `binarize`, which should be `10217` and `1419` correspondingly. 
+
+It took some investigating to find out that the vocab file ids aren't the ids used by the model and that internally it remaps them to new ids once the vocab file is loaded. Luckily, I didn't need to figure out how exactly it was done. Instead, I just used `fairseq.data.dictionary.Dictionary.load` to load the dictionary, which performed all the re-mappings, - and I then saved the final dictionary. I found out about that `Dictionary` class by running `fairseq` code with debugger.
 
 Here is the relevant part of the conversion script:
 
@@ -353,9 +360,9 @@ with open(src_vocab_file, "w", encoding="utf-8") as f:
 After running the conversion script, let's check the converted dictionary:
 
 ```
-grep '"Mach"' /code/huggingface/transformers-fair-wmt/data/wmt19-en-ru/vocab-src.json
+$ grep '"Mach"' /code/huggingface/transformers-fair-wmt/data/wmt19-en-ru/vocab-src.json
   "Mach": 10217,
-grep '"ine</w>":' /code/huggingface/transformers-fair-wmt/data/wmt19-en-ru/vocab-src.json
+$ grep '"ine</w>":' /code/huggingface/transformers-fair-wmt/data/wmt19-en-ru/vocab-src.json
   "ine</w>": 1419,
 ```
 We have the correct ids in the `transformers` version of the vocab file.
@@ -376,9 +383,14 @@ If you're curious to look deeper there are more tinkering bits in [this notebook
 
 ### Porting tokenizer's encoder to transformers
 
-`transformers` can't rely on [`fastBPE`](https://github.com/glample/fastBPE) since the latter requires a C-compiler, but luckly someone already implemented a python version of the same in [`tokenization_xlm.py`](https://github.com/huggingface/transformers/blob/master/src/transformers/tokenization_xlm.py)
+`transformers` can't rely on [`fastBPE`](https://github.com/glample/fastBPE) since the latter requires a C-compiler, but luckily someone already implemented a python version of the same in [`tokenization_xlm.py`](https://github.com/huggingface/transformers/blob/master/src/transformers/tokenization_xlm.py).
 
-So I just copied it to `src/transformers/tokenization_fsmt.py` and with very few changes I had a working encoder part of the tokenizer. There was a lot of code that didn't apply to the languages I needed to support, so I removed that code.
+So I just copied it to `src/transformers/tokenization_fsmt.py` and renamed the class names:
+```
+cp tokenization_xlm.py tokenization_fsmt.py
+perl -pi -e 's|XLM|FSMT|ig; s|xlm|fsmt|g;' tokenization_fsmt.py
+```
+and with very few changes I had a working encoder part of the tokenizer. There was a lot of code that didn't apply to the languages I needed to support, so I removed that code.
 
 Since I needed 2 different vocabularies, instead of one here in tokenizer and everywhere else I had to change the code to support both. So for example I had to override the super-class's methods:
 
@@ -391,7 +403,7 @@ Since I needed 2 different vocabularies, instead of one here in tokenizer and ev
         return self.src_vocab_size
 ```
 
-Since `fairseq` didn't use `bos` (beginning of script) tokens, I also had to change the code to not include those:
+Since `fairseq` didn't use `bos` (beginning of stream) tokens, I also had to change the code to not include those:
 
 ```
 -            return bos + token_ids_0 + sep
@@ -399,6 +411,8 @@ Since `fairseq` didn't use `bos` (beginning of script) tokens, I also had to cha
 +            return token_ids_0 + sep
 +        return token_ids_0 + sep + token_ids_1 + sep
 ```
+note: this is the output of `diff(1)` which shows the difference between two chunks of code - lines starting with `-` show what was removed, and with `+` what was added.
+
 `fairseq` was also escaping characters and performing an aggressive dash splitting, so I had to also change:
 
 ```
@@ -414,11 +428,9 @@ diff -u tokenization_orig.py tokenization_fsmt.py  | less
 ```
 Just make sure you're checking out the repository [around the time fsmt was released](https://github.com/huggingface/transformers/tree/129fdae04033fe4adfe013b734deaec6ec34ae2e), since the 2 files could have diverged since then.
 
-The final stage was to run through a bunch of inputs and compare that the ported tokenizer produced the same ids as the original. You can see this is done in [this notebook](./nbs/tokenizer.ipynb).
+The final stage was to run through a bunch of inputs and compare that the ported tokenizer produced the same ids as the original. You can see this is done in [this notebook](./nbs/tokenizer.ipynb), which I was running repeatedly while trying to figure out how to make the outputs match.
 
-This is the script I was running repeatedly and trying to figure out how to make the outputs match.
-
-This is how most of the porting process went, I'd take a small feature, run it the `fairseq`-way, get the outputs, do the same with the `transformers` code, try to make the outputs match - fiddle with the code until it does, then try a different kind of input make sure it produces the same outputs, and so on, until all inputs match.
+This is how most of the porting process went, I'd take a small feature, run it the `fairseq`-way, get the outputs, do the same with the `transformers` code, try to make the outputs match - fiddle with the code until it did, then try a different kind of input make sure it produced the same outputs, and so on, until all inputs produced outputs that matched.
 
 ## Model porting
 
@@ -600,6 +612,49 @@ After doing some more debugging here,  I had to change the way BPE was dealt wit
 +        return text
 ```
 And all was good.
+
+## Uploading models to s3
+
+Once the conversion script did a complete job of porting all the required files to `transformers`, I uploaded the models to my `s3` account:
+
+```
+cd data
+transformers-cli upload -y wmt19-ru-en
+transformers-cli upload -y wmt19-en-ru
+transformers-cli upload -y wmt19-de-en
+transformers-cli upload -y wmt19-en-de
+cd -
+```
+For the duration of testing I was using my s3 account and once my PR with the complete changes was ready to be merged I asked to move the models to the `facebook` organization account, since these models belong there.
+
+Several times I had to update just the config files, and I didn't want to re-upload the large models, so I wrote this little script that will produce the right upload commands:
+```
+# if updating just small files and not the large models, here is a script to generate the right commands:
+perl -le 'for $f (@ARGV) { print qq[transformers-cli upload -y $_/$f --filename $_/$f] for map { "wmt19-$_" } ("en-ru", "ru-en", "de-en", "en-de")}' vocab-src.json vocab-tgt.json tokenizer_config.json config.json
+# add/remove files as needed
+```
+So if, for example, I only needed to update all the `config.json` files, the script above would give me a convenient copy-n-paste:
+```
+transformers-cli upload -y wmt19-en-ru/config.json --filename wmt19-en-ru/config.json
+transformers-cli upload -y wmt19-ru-en/config.json --filename wmt19-ru-en/config.json
+transformers-cli upload -y wmt19-de-en/config.json --filename wmt19-de-en/config.json
+transformers-cli upload -y wmt19-en-de/config.json --filename wmt19-en-de/config.json
+```
+
+Once the upload was complete, these models could be accessed as:
+
+```
+tokenizer = FSMTTokenizer.from_pretrained("stas/wmt19-en-ru")
+```
+Until this upload I had to use the local model path, e.g.:
+```
+tokenizer = FSMTTokenizer.from_pretrained("/code/huggingface/transformers-fair-wmt/data/wmt19-en-ru")
+```
+
+Important: If you update the model files, and re-upload them, you must be aware that 
+due to CDN caching the uploaded model may be unavailable for up to 24hs after upload - i.e. the old cached model will be delivered. So the only way to start using the new model sooner is either:
+1. download it to a local path and use that path as an argument that gets passed to `from_pretrained()`.
+2. make sure you use: `from_pretrained(..., use_cdn=False)` everywhere for the next 24h - it's not enough to do it once.
 
 ## AutoConfig, AutoTokenizer, etc.
 
@@ -821,6 +876,29 @@ make docs
 to test that the newly added document was building correctly.
 
 The final source document is: [docs/source/model_doc/fsmt.rst](https://github.com/huggingface/transformers/blob/129fdae04033fe4adfe013b734deaec6ec34ae2e/docs/source/model_doc/fsmt.rst) and the [rendered version](ttps://huggingface.co/transformers/model_doc/fsmt.html).
+
+## It's PR time
+
+Once I felt my work was quite complete, I was ready to submit my PR. Since this work took many commits, I wanted to make a clean PR, so I used the following technique to squash all the commits into one in a new branch. This kept all the initial commits in place if I wanted to access any of them.
+
+The branch I was developing on was called `fair-wmt`, and the new branch that I was going to submit the PR from I named `fair-wmt-clean`, so what I did:
+
+```
+git checkout master
+git checkout -b fair-wmt-clean
+git merge --squash fair-wmt
+git commit -m "Ready for PR"
+git push origin fair-wmt-clean
+```
+
+Then I went to github and submitted this [PR](https://github.com/huggingface/transformers/pull/6940) based on the `fair-wmt-clean` branch.
+
+It took two weeks of several cycles of feedback followed by modifications, but eventually it was all satisfactory and it all got merged. While this process was going on, I was finding issues here and there, adding new tests, improved the documentation, etc., so it was time well spent.
+
+I subsequently filed a few more PRs with changes after I improved and reworked a few features, adding various build scripts, models cards, etc.
+
+Since the models I ported were belonging to `facebook` and `allenai` organizations, I had to ask Sam to move those model files from my account on `s3` to the corresponding organizations. 
+
 
 ## Conclusions
 
