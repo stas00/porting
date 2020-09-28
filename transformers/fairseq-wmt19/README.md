@@ -1,26 +1,26 @@
 # Porting fairseq wmt19 translation system to transformers
 
-This is an attempt to documented how [fairseq wmt19 translation system](https://github.com/pytorch/fairseq/tree/master/examples/wmt19) was ported to [`transformers`](https://github.com/huggingface/transformers/).
+This article is an attempt to documente how [fairseq wmt19 translation system](https://github.com/pytorch/fairseq/tree/master/examples/wmt19) was ported to [`transformers`](https://github.com/huggingface/transformers/).
 
 I was looking for some interesting project to work on and [Sam Shleifer](https://github.com/sshleifer) suggested I work on [porting a high quality translator](https://github.com/huggingface/transformers/issues/5419).
 
 I read the short paper: [Facebook FAIR's WMT19 News Translation Task Submission](https://arxiv.org/abs/1907.06616) that describes the original system and decided to give it a try.
 
-I had no idea how to approach this complex problem and Sam helped me to [break it down to smaller tasks](https://github.com/huggingface/transformers/issues/5419), which was of a great help.
+Initially, I had no idea how to approach this complex project and Sam helped me to [break it down to smaller tasks](https://github.com/huggingface/transformers/issues/5419), which was of a great help.
 
-I chose to work with the en-ru/ru-en models during porting as I speak both languages. It'd have been much more difficult to work with de-en/en-de as I don't speak German, and being able to evaluate the translation quality by just reading and making sense of the outputs at the advanced stages of the porting process saved me a ton of time.
+I chose to work with the pre-trained `en-ru`/`ru-en` models during porting as I speak both languages. It'd have been much more difficult to work with `de-en`/`en-de` pairs as I don't speak German, and being able to evaluate the translation quality by just reading and making sense of the outputs at the advanced stages of the porting process saved me a ton of time.
 
-Also, as I did the porting with the en-ru/ru-en models, I was totally unaware that the de-en/en-de models used a merged vocabulary, whereas the former used 2 separate vocabularies of different sizes. So once I did the more complicated work of supported 2 separate vocabularies, it was trivial to get the merged vocabulary to work.
+Also, as I did the initial porting with the `en-ru`/`ru-en` models, I was totally unaware that the `de-en`/`en-de` models used a merged vocabulary, whereas the former used 2 separate vocabularies of different sizes. So once I did the more complicated work of supporting 2 separate vocabularies, it was trivial to get the merged vocabulary to work.
 
 ## Let's cheat
 
-The first step was to cheat, of course. Why make a complex effort when one can make a little one. So I wrote a [short notebook](./nbs/cheat.ipynb) that in a few lines of code provided a proxy to fairseq and emulated `transformers` API. 
+The first step was to cheat, of course. Why make a big effort when one can make a little one. So I wrote a [short notebook](./nbs/cheat.ipynb) that in a few lines of code provided a proxy to `fairseq` and emulated `transformers` API. 
 
-If no other things but basic translation was required, this would have been enough. But, of course, we wanted to have the full porting, so after having this small victory, I moved onto much harder things.
+If no other things, but basic translation, was required, this would have been enough. But, of course, we wanted to have the full porting, so after having this small victory, I moved onto much harder things.
 
-## Installations
+## Preparations
 
-For the sake of this article let's assume that we work under `~/porting`, so let's create this directory:
+For the sake of this article let's assume that we work under `~/porting`, and therefore let's create this directory:
 ```
 mkdir ~/porting
 cd ~/porting
@@ -48,35 +48,37 @@ pip install -e .[dev]
 
 ## Files
 
-To get an idea of what needs to be done code-wise, the following files need to be created when the work is completed:
+To get an idea of what needs to be done code-wise, the following files need to be created and written:
 
 * [src/transformers/configuration_fsmt.py](https://github.com/huggingface/transformers/blob/129fdae04033fe4adfe013b734deaec6ec34ae2e/src/transformers/configuration_fsmt.py) -  a short configuration class.
 * [src/transformers/convert_fsmt_original_pytorch_checkpoint_to_pytorch.py](https://github.com/huggingface/transformers/blob/129fdae04033fe4adfe013b734deaec6ec34ae2e/src/transformers/convert_fsmt_original_pytorch_checkpoint_to_pytorch.py) - a complex conversion script. 
 * [src/transformers/modeling_fsmt.py](https://github.com/huggingface/transformers/blob/129fdae04033fe4adfe013b734deaec6ec34ae2e/src/transformers/modeling_fsmt.py) - this is where the model architecture is implemented.
 * [src/transformers/tokenization_fsmt.py](https://github.com/huggingface/transformers/blob/129fdae04033fe4adfe013b734deaec6ec34ae2e/src/transformers/tokenization_fsmt.py) - a tokenizer code
-* [tests/test_modeling_fsmt.py](https://github.com/huggingface/transformers/blob/129fdae04033fe4adfe013b734deaec6ec34ae2e/src/transformers/tests/test_modeling_fsmt.py) - model tests
-* [tests/test_tokenization_fsmt.py](https://github.com/huggingface/transformers/blob/129fdae04033fe4adfe013b734deaec6ec34ae2e/src/transformers/tests/test_tokenization_fsmt.py) - tokenizer tests
-* [docs/source/model_doc/fsmt.rst](https://github.com/huggingface/transformers/blob/129fdae04033fe4adfe013b734deaec6ec34ae2e/src/transformers/docs/source/model_doc/fsmt.rst) - a doc file
+* [tests/test_modeling_fsmt.py](https://github.com/huggingface/transformers/blob/129fdae04033fe4adfe013b734deaec6ec34ae2e/tests/test_modeling_fsmt.py) - model tests
+* [tests/test_tokenization_fsmt.py](https://github.com/huggingface/transformers/blob/129fdae04033fe4adfe013b734deaec6ec34ae2e/tests/test_tokenization_fsmt.py) - tokenizer tests
+* [docs/source/model_doc/fsmt.rst](https://github.com/huggingface/transformers/blob/129fdae04033fe4adfe013b734deaec6ec34ae2e/docs/source/model_doc/fsmt.rst) - a doc file
 
 there are other files that need to be modified as well, we will talk about those towards the end.
 
 
 ## Conversion
 
-One of the most important parts of the porting process is creating the conversion script. It will take all the available source data provided by the original developer of the model, which includes checkpoint with pre-trained weights, model and training configuration details, dictionaries and tokenizer support files, and convert them into a new set of files supported by `transformers`. You will find the final script here: [src/transformers/convert_fsmt_original_pytorch_checkpoint_to_pytorch.py](https://github.com/huggingface/transformers/blob/129fdae04033fe4adfe013b734deaec6ec34ae2e/src/transformers/convert_fsmt_original_pytorch_checkpoint_to_pytorch.py)
+One of the most important parts of the porting process is creating the conversion script. It will take all the available source data provided by the original developer of the model, which includes a checkpoint with pre-trained weights, model and training configuration details, dictionaries and tokenizer support files, and convert them into a new set of files supported by `transformers`. You will find the final conversion script here: [src/transformers/convert_fsmt_original_pytorch_checkpoint_to_pytorch.py](https://github.com/huggingface/transformers/blob/129fdae04033fe4adfe013b734deaec6ec34ae2e/src/transformers/convert_fsmt_original_pytorch_checkpoint_to_pytorch.py)
 
-I started by copying one of the existing conversion scripts, gutted most of it out and then gradually added parts to it as I was porting part by part.
+I started by copying one of the existing conversion scripts, gutted most of it out and then gradually added parts to it as I was porting.
 
-During the development I was testing all my code against a local copy of the converted model, and only at the very end when everything was ready I uploaded it to s3 and then continued testing against this version.
+During the development I was testing all my code against a local copy of the converted model, and only at the very end when everything was ready I uploaded it to s3 and then continued testing against the online version.
 
 ## fairseq model and its support files
 
-Let's first look at what data we get with the fairseq model. We are going to use the convenient `torch.hub` API, which makes it very easy to apply the models.
+Let's first look at what data we get with the `fairseq` model. We are going to use the convenient `torch.hub` API, which makes it very easy to deploy the models submitted to that hub:
 ```
 import torch
 torch.hub.load('pytorch/fairseq', 'transformer.wmt19.en-ru', checkpoint_file='model4.pt', tokenizer='moses', bpe='fastbpe')
 ```
-This code downloads the model and its support files. To look inside we have to hunt down the downloaded files in the `~/.cache` folder.
+This code downloads the pre-trained model and its support files. 
+
+To see what's inside we have to hunt down the downloaded files in the `~/.cache` folder.
 
 ```
 ls -1 ~/.cache/torch/hub/pytorch_fairseq/
@@ -110,13 +112,13 @@ total 13646584
 we have:
 1. `model*.pt` - 4 checkpoints (pytorch `state_dict` with all the pretrained weights, and various other things)
 2. `dict.*.txt` - source and target dictionaries
-3. `bpecodes` - special map file for BPE work
+3. `bpecodes` - special map file used by the tokenizer
 
 We are going to investigate each of these files in the following sections.
 
 ## How translation systems work
 
-Here is a bit of an introduction to how a computer translates text nowadays.
+Here is a bit of an introduction to how computers translate text nowadays.
 
 Computers can't read text, but can only handle numbers. So when working with text we have to map one or more letters into numbers, and hand those to a computer program. When the program completes it too returns  numbers, which we need to convert back into text. 
 
@@ -168,11 +170,11 @@ The first step was to port the encoder part of the tokenizer. The decoder part w
 
 ### fairseq's tokenizer workings
 
-Let's understand how fairseq's tokenizer works.
+Let's understand how `fairseq`'s tokenizer works.
 
-fairseq uses the [Byte Pair Encoding](https://en.wikipedia.org/wiki/Byte_pair_encoding) method (BPE) for tokenization. 
+`fairseq` uses the [Byte Pair Encoding](https://en.wikipedia.org/wiki/Byte_pair_encoding) method (BPE) for tokenization. 
 
-* note: from here on when I refer to fairseq, I refer to the specific   [implementation](https://github.com/pytorch/fairseq/tree/master/examples/wmt19) - the project itself has dozens of different implementations of different models.
+* note: from here on when I refer to `fairseq`, I refer to the specific   [implementation](https://github.com/pytorch/fairseq/tree/master/examples/wmt19) - the project itself has dozens of different implementations of different models.
 
 Let's see what it means:
 
@@ -298,7 +300,7 @@ One confusing thing is that if you remember the `apply_bpe` output was:
 ```
 ('apply_bpe: ', 6, ['Mach@@', 'ine', 'Lear@@', 'ning', 'is', 'great'])
 ```
-Instead of marking endings of the words with `</w>`, it leaves those as is, but instead marks words that were not the endings with `@@`. This is probably so, because `fastBPE` implementation is used by fairseq and that's how it does things. We will make these things consistent during porting since we don't use `fastBPE`.
+Instead of marking endings of the words with `</w>`, it leaves those as is, but instead marks words that were not the endings with `@@`. This is probably so, because `fastBPE` implementation is used by `fairseq` and that's how it does things. We will make these things consistent during porting since we don't use `fastBPE`.
 
 One last thing to check is the remapping of the BPE codes to vocabulary ids. To repeat, we had:
 
@@ -319,7 +321,7 @@ Mach@@ 6410
 # grep "^ine " ~/porting/pytorch_fairseq_model/dict.en.txt
 ine 88376
 ```
-Wait a second - those aren't the ids that we got after `binarize`, which should be `10217` and `1419` correspondingly. It took some digging to find out that the vocab file ids aren't the ids used by the model and that internally it remaps them to new ids once the vocab file is loaded. Luckily I didn't need to figure out how exactly it was done. Instead, I just used `fairseq.data.dictionary.Dictionary.load` to load the dict, which included all the re-mappings, - and then saved the final dictionary. I found out about that `Dictionary` class by running fairseq code with debugger.
+Wait a second - those aren't the ids that we got after `binarize`, which should be `10217` and `1419` correspondingly. It took some digging to find out that the vocab file ids aren't the ids used by the model and that internally it remaps them to new ids once the vocab file is loaded. Luckily I didn't need to figure out how exactly it was done. Instead, I just used `fairseq.data.dictionary.Dictionary.load` to load the dict, which included all the re-mappings, - and then saved the final dictionary. I found out about that `Dictionary` class by running `fairseq` code with debugger.
 
 Here is the relevant part of the conversion script:
 
@@ -389,7 +391,7 @@ Since I needed 2 different vocabularies, instead of one here in tokenizer and ev
         return self.src_vocab_size
 ```
 
-Since fairseq didn't use `bos` (beginning of script) tokens, I also had to change the code to not include those:
+Since `fairseq` didn't use `bos` (beginning of script) tokens, I also had to change the code to not include those:
 
 ```
 -            return bos + token_ids_0 + sep
@@ -397,7 +399,7 @@ Since fairseq didn't use `bos` (beginning of script) tokens, I also had to chang
 +            return token_ids_0 + sep
 +        return token_ids_0 + sep + token_ids_1 + sep
 ```
-fairseq was also escaping characters and performing an aggressive dash splitting, so I had to also change:
+`fairseq` was also escaping characters and performing an aggressive dash splitting, so I had to also change:
 
 ```
 -        [...].tokenize(text, return_str=False, escape=False)
@@ -416,7 +418,7 @@ The final stage was to run through a bunch of inputs and compare that the ported
 
 This is the script I was running repeatedly and trying to figure out how to make the outputs match.
 
-This is how most of the porting process went, I'd take a small feature, run it the fairseq-way, get the outputs, do the same with the `transformers` code, try to make the outputs match - fiddle with the code until it does, then try a different kind of input make sure it produces the same outputs, and so on, until all inputs match.
+This is how most of the porting process went, I'd take a small feature, run it the `fairseq`-way, get the outputs, do the same with the `transformers` code, try to make the outputs match - fiddle with the code until it does, then try a different kind of input make sure it produces the same outputs, and so on, until all inputs match.
 
 ## Model porting
 
@@ -436,9 +438,9 @@ perl -pi -e 's|Bart|FSMT|ig; s|bart|fsmt|g;' modeling_fsmt.py
 
 The first thing I did is to look at what was inside the publicly shared checkpoint. [This notebook](./nbs/config.ipynb) shows what I did there.
 
-The first thing I discovered that there were 4 checkpoints in there. I had no idea what to do about it, so I started with a simpler job of picking just the first checkpoint. Later I discovered that fairseq used all 4 checkpoints in an ensembe to get the best results, and that `transformers` currently doesn't support that. When the porting was complete and I was able to measure the performance scores, I found that `model4.pt` checkpoint provided the best score. But during the porting performance doesn't matter at all. Since I was using only one checkpoint it was crucial that when I was comparing outputs, I had fairseq also use just one and the same checkpoint.
+The first thing I discovered that there were 4 checkpoints in there. I had no idea what to do about it, so I started with a simpler job of picking just the first checkpoint. Later I discovered that `fairseq` used all 4 checkpoints in an ensembe to get the best results, and that `transformers` currently doesn't support that. When the porting was complete and I was able to measure the performance scores, I found that `model4.pt` checkpoint provided the best score. But during the porting performance doesn't matter at all. Since I was using only one checkpoint it was crucial that when I was comparing outputs, I had `fairseq` also use just one and the same checkpoint.
 
-I used a slightly different API for using fairseq:
+I used a slightly different API for using `fairseq`:
 ```
 from fairseq import hub_utils
 #checkpoint_file = 'model1.pt:model2.pt:model3.pt:model4.pt'
@@ -480,9 +482,9 @@ TransformerModel(
 ```
 which looks very similar to BART's architecture, with some slight differences in a few layers - some were added, others removed. So this was great news as I didn't have to re-invent the wheel but to only tweak a well-working design.
 
-Note that in the code sample above I'm not using `torch.load()` to load the `state_dict`. This is what I initially did and the result was most puzzling - I was missing `self_attn.(k|q|v)_proj` weights and instead had a single `self_attn.in_proj`. When I tried loading the model using fairseq API, it fixed things up - apparently that model was old and was using an old architecture that had one set of weights for k/v/q and the newer architecture has them separate. When fairseq loads this old model, it rewrites the weights to match the modern architecture.
+Note that in the code sample above I'm not using `torch.load()` to load the `state_dict`. This is what I initially did and the result was most puzzling - I was missing `self_attn.(k|q|v)_proj` weights and instead had a single `self_attn.in_proj`. When I tried loading the model using `fairseq` API, it fixed things up - apparently that model was old and was using an old architecture that had one set of weights for k/v/q and the newer architecture has them separate. When `fairseq` loads this old model, it rewrites the weights to match the modern architecture.
 
-I also used [this notebook](./nbs/visualize-models.ipynb) to compare the `state_dict`s visually. In that notebook you will also see that fairseq fetches a 2.2GB-worth of data in `last_optimizer_state`, which we can safely ignore, and have an x3 times smaller final model size.
+I also used [this notebook](./nbs/visualize-models.ipynb) to compare the `state_dict`s visually. In that notebook you will also see that `fairseq` fetches a 2.2GB-worth of data in `last_optimizer_state`, which we can safely ignore, and have an x3 times smaller final model size.
 
 In the conversion script I also had to remove some `state_dict` keys, which we weren't going to use, e.g. `model.encoder.version`, `model.model` and a few others.
 
@@ -547,9 +549,9 @@ You will find the final conversion code [here](https://github.com/huggingface/tr
 
 ### Porting the architecture code
 
-Now that we have the model weights and the model configuration ported, we *just* need to adjust the code copied from  `modeling_bart.py` to match fairseq's functionality.
+Now that we have the model weights and the model configuration ported, we *just* need to adjust the code copied from  `modeling_bart.py` to match `fairseq`'s functionality.
 
-The first step was to take a sentence, encode it and then feed to the `generate` function - for fairseq and for `transformers`. 
+The first step was to take a sentence, encode it and then feed to the `generate` function - for `fairseq` and for `transformers`. 
 
 After a few very failing attempts to get somewhere - I quickly realized that with the current level of complexity using `print` as debug will get me nowhere, and neither the basic `pdb` debugger. In order to be efficient and to be able to watch multiple variables and have watches that are code-evaluations I needed a serious visual debugger. I spent a day trying all kinds of debuggers and only when I tried `pycharm` I saw that it was the tool that I needed. It was my first time using `pycharm`, but I quickly figured out how to use it.
 
@@ -567,14 +569,15 @@ I started with 2 scripts:
 
 running both side by side, stepping through with debugger on each side and comparing values of relevant variables - until I found the first divergence. I then studied the code, made adjustments inside `modeling_fsmt.py`, restarted the debugger, quickly jumped to the point of divergence and re-checked the outputs. This cycle has been repeated multiple times until the outputs matched. 
 
-The first things I had to change is to remove a few layers that weren't used by fairseq and then add some new layers it was using. And then the rest was primarily figuring out when to switch to `src_vocab_size` and when to `tgt_vocab_size` - since in the core modules it's just `vocab_size`, which weren't accounting for a possible model that has 2 dictionaries. Finally, I discovered that a few hyperparameter configurations weren't the same.
+The first things I had to change is to remove a few layers that weren't used by `fairseq` and then add some new layers it was using. And then the rest was primarily figuring out when to switch to `src_vocab_size` and when to `tgt_vocab_size` - since in the core modules it's just `vocab_size`, which weren't accounting for a possible model that has 2 dictionaries. Finally, I discovered that a few hyperparameter configurations weren't the same.
 
-I first did this process for the simpler no-beam search, and once the outputs were 100% matching I repeated it with the more complicated beam search. Here, for example, I discovered that fairseq was using the equivalent of `early_stopping=True`, whereas `transformers` has it as `False` by default. When early stopping is enabled it stops looking for new candidates as soon as there are beam size candidates, whereas when it's off, the algorithm stops searching only when it can't find higher probability candidates than what it already had. In their paper fairseq used a huge beam size of 50, which compensates for using early stopping.
+I first did this process for the simpler no-beam search, and once the outputs were 100% matching I repeated it with the more complicated beam search. Here, for example, I discovered that `fairseq` was using the equivalent of `early_stopping=True`, whereas `transformers` has it as `False` by default. When early stopping is enabled it stops looking for new candidates as soon as there are beam size candidates, whereas when it's off, the algorithm stops searching only when it can't find higher probability candidates than what it already had. In their paper `fairseq` used a huge beam size of 50, which compensates for using early stopping.
+
 
 
 ## Tokenizer decoder porting
 
-Once I had the ported`generate` produce pretty similar results to fairseq's I next needed to complete the last stage of decoding the outputs into the human readable text. Similar to the encoding process, this one was done in reverse.
+Once I had the ported `generate` produce pretty similar results to `fairseq`'s I next needed to complete the last stage of decoding the outputs into the human readable text. Similar to the encoding process, this one was done in reverse.
 
 The steps were:
 1. convert ids into strings
@@ -597,6 +600,57 @@ After doing some more debugging here,  I had to change the way BPE was dealt wit
 +        return text
 ```
 And all was good.
+
+## AutoConfig, AutoTokenizer, etc.
+
+One other change to do is to plug the newly ported model into the automated model `transformers` system. This is used primarily on the [models website](https://huggingface.co/models) to load the model configuration, tokenizer and the main class without providing any specific class names. For example, in the case of `FSMT` one can do:
+
+```
+from transformers import AutoTokenizer, AutoModelWithLMHead
+mname = "facebook/wmt19-en-ru"
+tokenizer = AutoTokenizer.from_pretrained(mname)
+model = AutoModelWithLMHead.from_pretrained(mname)
+```
+
+There are 3 `*auto*` files that have the maps that make this possible,
+
+-rw-rw-r-- 1 stas stas 16K Sep 23 13:53 src/transformers/configuration_auto.py
+-rw-rw-r-- 1 stas stas 65K Sep 23 13:53 src/transformers/modeling_auto.py
+-rw-rw-r-- 1 stas stas 62K Sep 17 11:17 src/transformers/modeling_tf_auto.py
+-rw-rw-r-- 1 stas stas 13K Sep 23 13:53 src/transformers/tokenization_auto.py
+
+Then the are the pipelines, which completely hide all the NLP complexities from the end user and provide a very simple API to just pick a model and use it for a task at hand. e.g.:
+
+```
+summarizer = pipeline("summarization", model="t5-base", tokenizer="t5-base")
+summary = summarizer("Some long document here", min_length=5, max_length=20)
+print(summary)
+```
+The translation pipelines are a work in progress as of this writing, watch [this document](https://huggingface.co/transformers/main_classes/pipelines.html) for updates for when translation will be supported (currently only a few specific models/languages are supported).
+
+Finally, there is `src/transforers/__init__.py` to edit so that one can do:
+```
+from transformers import FSMTTokenizer, FSMTForConditionalGeneration
+```
+instead of:
+```
+from transformers.tokenization_fsmt import FSMTTokenizer
+from transformers.modeling_fsmt import FSMTForConditionalGeneration
+```
+but either way works.
+
+To find all the places I needed to plug FSMT in, I mimicked `BartConfig`, `BartForConditionalGeneration` and `BartTokenizer`. I just grepped which files had it and inserted corresponding entries for `FSMTConfig`, `FSMTForConditionalGeneration` and `FSMTTokenizer`.
+```
+$ egrep -l "(BartConfig|BartForConditionalGeneration|BartTokenizer)" src/transformers/*.py | egrep -v "(marian|bart|pegasus|rag|fsmt)"
+src/transformers/configuration_auto.py
+src/transformers/generation_utils.py
+src/transformers/__init__.py
+src/transformers/modeling_auto.py
+src/transformers/pipelines.py
+src/transformers/tokenization_auto.py
+```
+In the grep search I excluded the subclasses that also include those classes.
+
 
 ## Manual testing
 
@@ -633,7 +687,7 @@ I added one more test that performs a light BLEU evaluation - I used just 8 text
 
 ## SinusoidalPositionalEmbedding
 
-`farseq` used a slightly different implementation of `SinusoidalPositionalEmbedding` than the one used by `transformers`. Initially I copied the `fairseq` implementation. But when trying to get the test suite to work I couldn't get the `torchscript` tests to pass. `SinusoidalPositionalEmbedding` was written so that it won't be part of `state_dict` and not get saved with the model weights - all the weights generated by this class are deterministic and not trained. `fairseq` used a trick to make this work transparently by not making its weights a parameter or a buffer, and then during `forward` switching the weight to the correct device. `torchscript` wasn't handling this well as it wanted all the weights to be on the correct device before the first `forward` call.
+`fairseq` used a slightly different implementation of `SinusoidalPositionalEmbedding` than the one used by `transformers`. Initially I copied the `fairseq` implementation. But when trying to get the test suite to work I couldn't get the `torchscript` tests to pass. `SinusoidalPositionalEmbedding` was written so that it won't be part of `state_dict` and not get saved with the model weights - all the weights generated by this class are deterministic and not trained. `fairseq` used a trick to make this work transparently by not making its weights a parameter or a buffer, and then during `forward` switching the weight to the correct device. `torchscript` wasn't handling this well as it wanted all the weights to be on the correct device before the first `forward` call.
 
 I had to rewrite the implementation to convert it to a normal `nn.Embedding` subclass and then add functionality not to save the weights during `save_pretrained()` and not to complain if it doesn't find those weights during `from_pretrained()`, when the weights are getting loaded.
 
@@ -667,13 +721,13 @@ You can see that the BLEU score was `39.0498` and that it evaluated using 2000 t
 
 Remember, I couldn't use the model ensemble, so I next needed to find the best performing checkpoint. For that purpose I wrote a script [fsmt-bleu-eval-each-chkpt.py](./scripts/fsmt-bleu-eval-each-chkpt.sh) which re-converted the model for each model, run the eval script and report the best one. As a result I knew that `model4.pt` from the original was giving me the best performance.
 
-I wasn't getting the same BLEU scores as reported in the original paper, so I next needed to make sure that we are comparing the same things using the same tools. Through asking at the fairseq issue I was given the code that was used by fairseq developers to get their BLEU scores - you will find it [here](./scripts/fseq-reproduce-bleu.sh). But, alas, their method was using a re-ranking approach which wasn't disclosed. Moreover, they evaled on outputs before detokenization and not the real output, which apparently scores better. Bottom line - we weren't scoring in the same way. The paper [A Call for Clarity in Reporting BLEU Scores](https://arxiv.org/abs/1804.08771) invites developers to start using the same method for calculating the metrics (tldr: use `sacrebleu`).
+I wasn't getting the same BLEU scores as reported in the original paper, so I next needed to make sure that we are comparing the same things using the same tools. Through asking at the `fairseq` issue I was given the code that was used by `fairseq` developers to get their BLEU scores - you will find it [here](./scripts/fseq-reproduce-bleu.sh). But, alas, their method was using a re-ranking approach which wasn't disclosed. Moreover, they evaled on outputs before detokenization and not the real output, which apparently scores better. Bottom line - we weren't scoring in the same way. The paper [A Call for Clarity in Reporting BLEU Scores](https://arxiv.org/abs/1804.08771) invites developers to start using the same method for calculating the metrics (tldr: use `sacrebleu`).
 
 Currently, this ported model is surely slightly behind the original on the BLEU scores, because model ensemble is not used, but it's impossible to tell the exact difference until the same measuring method is used.
 
 ## Porting new models
 
-After uploading the 4 fairseq models [here](https://huggingface.co/models?filter=facebook&tag=fsmt) it was then suggested to port 3 wmt16 and 2 wmt19 AllenAI models 1 (Jungo Kasai, et al). The porting was a breeze, I just had to figure out how to put all the source files together as they were spread out through several unrelated archives and conversion worked without a hitch. 
+After uploading the 4 `fairseq` models [here](https://huggingface.co/models?filter=facebook&tag=fsmt) it was then suggested to port 3 wmt16 and 2 wmt19 AllenAI models 1 (Jungo Kasai, et al). The porting was a breeze, I just had to figure out how to put all the source files together as they were spread out through several unrelated archives and conversion worked without a hitch. 
 
 The only issue I discovered after porting is that I was getting a lower BLEU score. Jungo Kasai was very helpful at suggesting that a custom `length_penalty=0.6` was used, and once I plugged that in I was getting much better results.
 
@@ -708,7 +762,7 @@ bleu  | num_beams | length_penalty | early_stopping
 38.92 |        15 |            1.1 |              1
 [...]
 ```
-You can see clearly that a wider beam size delivers better results. And in the case of `transformers` `early_stopping=False` performs better (in fairseq they use `early_stopping=True` equivalent).
+You can see clearly that a wider beam size delivers better results. And in the case of `transformers` `early_stopping=False` performs better (in `fairseq` they use `early_stopping=True` equivalent).
 
 So for the 5 new models I used this script to find the best default parameters and I used those when converting the model. The user can still override those when running `generate()`, but why not give the best defaults.
 
@@ -749,17 +803,38 @@ metrics:
 
 ## Model description
 
-This is a ported version of [fairseq wmt19 transformer](https://github.com/pytorch/fairseq/blob/master/examples/wmt19/README.md) for en-ru.
+This is a ported version of 
 [...]
 ```
 
 As you can see we define the languages, tags, license, datasets, and metrics. There is a full guide for writing these at [Model sharing and uploading](https://huggingface.co/transformers/model_sharing.html#add-a-model-card). The rest is the markdown document describing the model and its nuances.
 
 
+## Documentation
+
+Most of the documentation is autogenerated. As before I copied `docs/source/model_doc/bart.rst` and adapted it to my needs and when ready linked to it by adding `fsmt` entry inside `docs/source/index.rst`
+
+I used:
+```
+make docs
+```
+to test that the newly added document was building correctly.
+
+The final source document is: [docs/source/model_doc/fsmt.rst](https://github.com/huggingface/transformers/blob/129fdae04033fe4adfe013b734deaec6ec34ae2e/docs/source/model_doc/fsmt.rst) and the [rendered version](ttps://huggingface.co/transformers/model_doc/fsmt.html).
+
 ## Conclusions
 
-- no model ensemble, but the download size is 1.1GB and not 13GB as in the original. For some reason the original includes the optimizer state saved in the model - so it adds 4x2.2GB almost 9GB of dead weight for those who just want to download the model to use it as is to translate text.
+- At the moment, didn't port the model ensemble as `transformers` doesn't support it. One the plus size the download size of the final `facebook/wmt19-*` models  is 1.1GB and not 13GB as in the original. For some reason the original includes the optimizer state saved in the model - so it adds 4x2.2GB almost 9GB of dead weight for those who just want to download the model to use it as is to translate text.
 
+- While the job of porting looked very challenging at the beginning as I didn't know the internals of neither `transformers` nor `fairseq`, looking back it wasn't that difficult after all. This was primarily due to having most of the components already available for me in the various parts of `transformers` - I *just* needed to find parts that I needed, mostly borrowing heavily from other models, and then tweak them to do what I needed. This was true for both the code and the tests. It'd have been a much more difficult project if I had to write it all from scratch.
+
+## Appreciations
+
+- Having [Sam Shleifer](https://github.com/sshleifer) mentor me through this process was of an extreme help to me, both thanks to his technical support but just as importantly for inspiring and encouraging me when I was getting stuck, yet not doing the work for me. 
+
+- The PR merging process took a good couple of weeks before it was accepted. During this stage, besides Sam, [Lysandre Debut](https://github.com/LysandreJik) and [Sylvain Gugger](https://github.com/sgugger) contributed a lot through their insights and suggestions, which I integrating into the codebase. 
+
+- I'm grateful to everybody who has contributed to `transformers` codebase, which paved the way for my work.
 
 ## Notes
 
@@ -780,11 +855,11 @@ and restarting your jupyter notebook server.
 
 ### Links to github versions of files
 
-In order to ensure that links work when you read this article much later, the links were made to a specific version of the code and not necessarily the latest version. This is so that if files were renamed or removed you will still find the code this article is referring to. If you want to ensure you're looking at the latest version of the code, replace the hash code in the link with `master`, e.g. replace:
+In order to ensure that links work if you read this article much later after it has been written, the links were made to a specific SHA version of the code and not necessarily the latest version. This is so that if files were renamed or removed you will still find the code this article is referring to. If you want to ensure you're looking at the latest version of the code, replace the hash code in the links with `master`. For example, a link:
 ```
 https://github.com/huggingface/transformers/blob/129fdae04033fe4adfe013b734deaec6ec34ae2e/src/transformers/modeling_fsmt.py
 ```
-with:
+becomes:
 ```
 https://github.com/huggingface/transformers/blob/master/src/transformers/convert_fsmt_original_pytorch_checkpoint_to_pytorch.py
 ```
