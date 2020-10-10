@@ -14,7 +14,7 @@ Also, as I did the initial porting with the `en-ru`/`ru-en` models, I was totall
 
 ## Let's cheat
 
-The first step was to cheat, of course. Why make a big effort when one can make a little one. So I wrote a [short notebook](./nbs/cheat.ipynb) that in a few lines of code provided a proxy to `fairseq` and emulated `transformers` API. 
+The first step was to cheat, of course. Why make a big effort when one can make a little one. So I wrote a [short notebook](https://github.com/stas00/porting/tree/master/transformers/fairseq-wmt19/nbs/cheat.ipynb) that in a few lines of code provided a proxy to `fairseq` and emulated `transformers` API. 
 
 If no other things, but basic translation, was required, this would have been enough. But, of course, we wanted to have the full porting, so after having this small victory, I moved onto much harder things.
 
@@ -220,7 +220,7 @@ The steps were:
 2. `apply_bpe`: BPE splits the input into words and sub-words according to its `bpecodes` file supplied by the tokenizer - we get 6 BPE chunks
 3. `binarize`: this simply remaps the BPE chunks from the previous step into their corresponding ids in the vocabulary (which is also downloaded with the model)
 
-You can refer to [this notebook](./nbs/tokenizer.ipynb) to see more details.
+You can refer to [this notebook](https://github.com/stas00/porting/tree/master/transformers/fairseq-wmt19/nbs/tokenizer.ipynb) to see more details.
 
 This is a good time to look inside the `bpecodes` file. Here is the top of the file:
 
@@ -379,7 +379,7 @@ Instead of marking chunks that are segments of a word, with the exception of the
 
 This successfully completed the porting of the first part of the model files. You can see the final version of the code [here](https://github.com/huggingface/transformers/blob/129fdae04033fe4adfe013b734deaec6ec34ae2e/src/transformers/convert_fsmt_original_pytorch_checkpoint_to_pytorch.py#L128).
 
-If you're curious to look deeper there are more tinkering bits in [this notebook](./nbs/tokenizer-dev.ipynb).
+If you're curious to look deeper there are more tinkering bits in [this notebook](https://github.com/stas00/porting/tree/master/transformers/fairseq-wmt19/nbs/tokenizer-dev.ipynb).
 
 ### Porting tokenizer's encoder to transformers
 
@@ -428,31 +428,35 @@ diff -u tokenization_orig.py tokenization_fsmt.py  | less
 ```
 Just make sure you're checking out the repository [around the time fsmt was released](https://github.com/huggingface/transformers/tree/129fdae04033fe4adfe013b734deaec6ec34ae2e), since the 2 files could have diverged since then.
 
-The final stage was to run through a bunch of inputs and compare that the ported tokenizer produced the same ids as the original. You can see this is done in [this notebook](./nbs/tokenizer.ipynb), which I was running repeatedly while trying to figure out how to make the outputs match.
+The final stage was to run through a bunch of inputs and compare that the ported tokenizer produced the same ids as the original. You can see this is done in [this notebook](https://github.com/stas00/porting/tree/master/transformers/fairseq-wmt19/nbs/tokenizer.ipynb), which I was running repeatedly while trying to figure out how to make the outputs match.
 
 This is how most of the porting process went, I'd take a small feature, run it the `fairseq`-way, get the outputs, do the same with the `transformers` code, try to make the outputs match - fiddle with the code until it did, then try a different kind of input make sure it produced the same outputs, and so on, until all inputs produced outputs that matched.
 
-## Model porting
+## Porting the core translation functionality
 
-Having had a relatively quick success with porting the tokenizer (obviously, thanks to most of the code being there already), the next stage was much more complex. I had to break it down into multiple sub-tasks. I had to 
-1. port the model weights
-2. make `generate` work first for a single beam
-3. and then multiple beams.
+Having had a relatively quick success with porting the tokenizer (obviously, thanks to most of the code being there already), the next stage was much more complex. This is the `generate()` function which translated the inputs ids and returned output ids.
 
-I first researched which of the existing architectures are the closest to my needs. It was BART that fit the closest, so I went ahead and did:
+I had to break it down into multiple sub-tasks. I had to 
+1. port the model weights.
+2. make `generate()` work for a single beam (i.e. return just one result).
+3. and then multiple beams (i.e. return multiple results).
+
+I first researched which of the existing architectures were the closest to my needs. It was BART that fit the closest, so I went ahead and did:
 
 ```
 cp modeling_bart.py modeling_fsmt.py
 perl -pi -e 's|Bart|FSMT|ig; s|bart|fsmt|g;' modeling_fsmt.py
 ```
 
+This was my starting point that I needed to tweak to work with the model weights provided by `fairseq`.
+
 ### Porting weights and configuration
 
-The first thing I did is to look at what was inside the publicly shared checkpoint. [This notebook](./nbs/config.ipynb) shows what I did there.
+The first thing I did is to look at what was inside the publicly shared checkpoint. [This notebook](https://github.com/stas00/porting/tree/master/transformers/fairseq-wmt19/nbs/config.ipynb) shows what I did there.
 
-The first thing I discovered that there were 4 checkpoints in there. I had no idea what to do about it, so I started with a simpler job of picking just the first checkpoint. Later I discovered that `fairseq` used all 4 checkpoints in an ensembe to get the best results, and that `transformers` currently doesn't support that. When the porting was complete and I was able to measure the performance scores, I found that `model4.pt` checkpoint provided the best score. But during the porting performance doesn't matter at all. Since I was using only one checkpoint it was crucial that when I was comparing outputs, I had `fairseq` also use just one and the same checkpoint.
+I discovered that there were 4 checkpoints in there. I had no idea what to do about it, so I started with a simpler job of using just the first checkpoint. Later I discovered that `fairseq` used all 4 checkpoints in an ensemble to get the best predictions, and that `transformers` currently doesn't support that feature. When the porting was completed and I was able to measure the performance scores, I found out that `model4.pt` checkpoint provided the best score. But during the porting performance didn't matter much. Since I was using only one checkpoint it was crucial that when I was comparing outputs, I had `fairseq` also use just one and the same checkpoint.
 
-I used a slightly different API for using `fairseq`:
+To accomplish that I used a slightly different `fairseq` API:
 ```
 from fairseq import hub_utils
 #checkpoint_file = 'model1.pt:model2.pt:model3.pt:model4.pt'
@@ -472,7 +476,7 @@ ru2en = hub_utils.from_pretrained(
 ```
 First I looked at the model:
 ```
-ru2en["models"][0]
+print(ru2en["models"][0])
 ```
 ```
 TransformerModel(
@@ -490,13 +494,13 @@ TransformerModel(
           (out_proj): Linear(in_features=1024, out_features=1024, bias=True)
         )
       [...]
-# full output is in the notebook
+# the full output is in the notebook
 ```
-which looks very similar to BART's architecture, with some slight differences in a few layers - some were added, others removed. So this was great news as I didn't have to re-invent the wheel but to only tweak a well-working design.
+which looks very similar to BART's architecture, with some slight differences in a few layers - some were added, others removed. So this was great news as I didn't have to re-invent the wheel, but to only tweak a well-working design.
 
 Note that in the code sample above I'm not using `torch.load()` to load the `state_dict`. This is what I initially did and the result was most puzzling - I was missing `self_attn.(k|q|v)_proj` weights and instead had a single `self_attn.in_proj`. When I tried loading the model using `fairseq` API, it fixed things up - apparently that model was old and was using an old architecture that had one set of weights for k/v/q and the newer architecture has them separate. When `fairseq` loads this old model, it rewrites the weights to match the modern architecture.
 
-I also used [this notebook](./nbs/visualize-models.ipynb) to compare the `state_dict`s visually. In that notebook you will also see that `fairseq` fetches a 2.2GB-worth of data in `last_optimizer_state`, which we can safely ignore, and have an x3 times smaller final model size.
+I also used [this notebook](https://github.com/stas00/porting/tree/master/transformers/fairseq-wmt19/nbs/visualize-models.ipynb) to compare the `state_dict`s visually. In that notebook you will also see that `fairseq` fetches a 2.2GB-worth of data in `last_optimizer_state`, which we can safely ignore, and have an 3 times smaller final model size.
 
 In the conversion script I also had to remove some `state_dict` keys, which we weren't going to use, e.g. `model.encoder.version`, `model.model` and a few others.
 
@@ -518,7 +522,7 @@ pprint(args)
  'bpe': 'fastbpe',
  [... full output is in the notebook ...] 
 ```
-ok, we will copy those to configure the model. I had to rename some of the argument names, wherever `transformers` used different names for the same configuration setting.  So the re-map of configuration looks as following:
+ok, we will copy those to configure the model. I had to rename some of the argument names, wherever `transformers` used different names for the corresponding configuration setting.  So the re-mapping of configuration looks as following:
 
 ```
     model_conf = {
@@ -565,38 +569,38 @@ Now that we have the model weights and the model configuration ported, we *just*
 
 The first step was to take a sentence, encode it and then feed to the `generate` function - for `fairseq` and for `transformers`. 
 
-After a few very failing attempts to get somewhere - I quickly realized that with the current level of complexity using `print` as debug will get me nowhere, and neither the basic `pdb` debugger. In order to be efficient and to be able to watch multiple variables and have watches that are code-evaluations I needed a serious visual debugger. I spent a day trying all kinds of debuggers and only when I tried `pycharm` I saw that it was the tool that I needed. It was my first time using `pycharm`, but I quickly figured out how to use it.
+After a few very failing attempts to get somewhere - I quickly realized that with the current level of complexity using `print` as debug will get me nowhere, and neither will the basic `pdb` debugger. In order to be efficient and to be able to watch multiple variables and have watches that are code-evaluations I needed a serious visual debugger. I spent a day trying all kinds of python debuggers and only when I tried `pycharm` I realized that it was the tool that I needed. It was my first time using `pycharm`, but I quickly figured out how to use it, as it was quite intuitive.
 
 Over time I found a great feature in `pycharm` that allowed me to group breakpoints by functionality and I could turn whole groups on or off depending on what I was debugging. For example, here I have beam-search related break-points off and decoder ones on:
 
-![break point group](./images/pycharm-break-point-groups.png)
+![break point group](https://github.com/stas00/porting/tree/master/transformers/fairseq-wmt19/images/pycharm-break-point-groups.png)
 
 Now that I have used this debugger to port FSMT, I know that it would have take me many times over to use pdb to do the same - I may have even given it up.
 
 I started with 2 scripts:
-* [fseq-translate](./scripts/fseq-translate.py)
-* [fsmt-translate](./scripts/fsmt-translate.py)
+* [fseq-translate](https://github.com/stas00/porting/tree/master/transformers/fairseq-wmt19/scripts/fseq-translate.py)
+* [fsmt-translate](https://github.com/stas00/porting/tree/master/transformers/fairseq-wmt19/scripts/fsmt-translate.py)
 
 (without the `decode` part first)
 
 running both side by side, stepping through with debugger on each side and comparing values of relevant variables - until I found the first divergence. I then studied the code, made adjustments inside `modeling_fsmt.py`, restarted the debugger, quickly jumped to the point of divergence and re-checked the outputs. This cycle has been repeated multiple times until the outputs matched. 
 
-The first things I had to change is to remove a few layers that weren't used by `fairseq` and then add some new layers it was using. And then the rest was primarily figuring out when to switch to `src_vocab_size` and when to `tgt_vocab_size` - since in the core modules it's just `vocab_size`, which weren't accounting for a possible model that has 2 dictionaries. Finally, I discovered that a few hyperparameter configurations weren't the same.
+The first things I had to change is to remove a few layers that weren't used by `fairseq` and then add some new layers it was using. And then the rest was primarily figuring out when to switch to `src_vocab_size` and when to `tgt_vocab_size` - since in the core modules it's just `vocab_size`, which weren't accounting for a possible model that has 2 dictionaries. Finally, I discovered that a few hyperparameter configurations weren't the same, and so those were changed too. 
 
-I first did this process for the simpler no-beam search, and once the outputs were 100% matching I repeated it with the more complicated beam search. Here, for example, I discovered that `fairseq` was using the equivalent of `early_stopping=True`, whereas `transformers` has it as `False` by default. When early stopping is enabled it stops looking for new candidates as soon as there are beam size candidates, whereas when it's off, the algorithm stops searching only when it can't find higher probability candidates than what it already had. In their paper `fairseq` used a huge beam size of 50, which compensates for using early stopping.
+I first did this process for the simpler no-beam search, and once the outputs were 100% matching I repeated it with the more complicated beam search. Here, for example, I discovered that `fairseq` was using the equivalent of `early_stopping=True`, whereas `transformers` has it as `False` by default. When early stopping is enabled it stops looking for new candidates as soon as there are as many candidates as the beam size, whereas when it's disabled, the algorithm stops searching only when it can't find higher probability candidates than what it already had. The `fairseq` paper declares that a huge beam size of 50 was used, which compensates for using early stopping.
 
 
 
 ## Tokenizer decoder porting
 
-Once I had the ported `generate` produce pretty similar results to `fairseq`'s I next needed to complete the last stage of decoding the outputs into the human readable text. Similar to the encoding process, this one was done in reverse.
+Once I had the ported `generate` function produce pretty similar results to `fairseq`'s `generate` I next needed to complete the last stage of decoding the outputs into the human readable text. Similar to the encoding process, this one was done in reverse.
 
 The steps were:
 1. convert ids into strings
 2. remove BPE encodings 
 3. detokenize - handle escaped characters, etc.
 
-After doing some more debugging here,  I had to change the way BPE was dealt with and also run the outputs through moses detokenizer.
+After doing some more debugging here,  I had to change the way BPE was dealt with from the original approach in `tokenization_xlm.py` and also run the outputs through `moses` detokenizer.
 
 ```
      def convert_tokens_to_string(self, tokens):
@@ -615,7 +619,7 @@ And all was good.
 
 ## Uploading models to s3
 
-Once the conversion script did a complete job of porting all the required files to `transformers`, I uploaded the models to my `s3` account:
+Once the conversion script did a complete job of porting all the required files to `transformers`, I uploaded the models to my 🤗 s3 account:
 
 ```
 cd data
@@ -625,15 +629,15 @@ transformers-cli upload -y wmt19-de-en
 transformers-cli upload -y wmt19-en-de
 cd -
 ```
-For the duration of testing I was using my s3 account and once my PR with the complete changes was ready to be merged I asked to move the models to the `facebook` organization account, since these models belong there.
+For the duration of testing I was using my 🤗 s3 account and once my PR with the complete changes was ready to be merged I asked in the PR to move the models to the `facebook` organization account, since these models belong there.
 
-Several times I had to update just the config files, and I didn't want to re-upload the large models, so I wrote this little script that will produce the right upload commands:
+Several times I had to update just the config files, and I didn't want to re-upload the large models, so I wrote this little script that produces the right upload commands, which otherwise were too long to type and as a result were error-prone:
 ```
 # if updating just small files and not the large models, here is a script to generate the right commands:
 perl -le 'for $f (@ARGV) { print qq[transformers-cli upload -y $_/$f --filename $_/$f] for map { "wmt19-$_" } ("en-ru", "ru-en", "de-en", "en-de")}' vocab-src.json vocab-tgt.json tokenizer_config.json config.json
 # add/remove files as needed
 ```
-So if, for example, I only needed to update all the `config.json` files, the script above would give me a convenient copy-n-paste:
+So if, for example, I only needed to update all the `config.json` files, the script above gave me a convenient copy-n-paste:
 ```
 transformers-cli upload -y wmt19-en-ru/config.json --filename wmt19-en-ru/config.json
 transformers-cli upload -y wmt19-ru-en/config.json --filename wmt19-ru-en/config.json
@@ -642,7 +646,6 @@ transformers-cli upload -y wmt19-en-de/config.json --filename wmt19-en-de/config
 ```
 
 Once the upload was complete, these models could be accessed as:
-
 ```
 tokenizer = FSMTTokenizer.from_pretrained("stas/wmt19-en-ru")
 ```
@@ -651,14 +654,13 @@ Until this upload I had to use the local model path, e.g.:
 tokenizer = FSMTTokenizer.from_pretrained("/code/huggingface/transformers-fair-wmt/data/wmt19-en-ru")
 ```
 
-Important: If you update the model files, and re-upload them, you must be aware that 
-due to CDN caching the uploaded model may be unavailable for up to 24hs after upload - i.e. the old cached model will be delivered. So the only way to start using the new model sooner is either:
-1. download it to a local path and use that path as an argument that gets passed to `from_pretrained()`.
-2. make sure you use: `from_pretrained(..., use_cdn=False)` everywhere for the next 24h - it's not enough to do it once.
+Important: If you update the model files, and re-upload them, you must be aware that due to CDN caching the uploaded model may be unavailable for up to 24hs after the upload - i.e. the old cached model will be delivered. So the only way to start using the new model sooner is by either:
+1. downloading it to a local path and use that path as an argument that gets passed to `from_pretrained()`.
+2. or using: `from_pretrained(..., use_cdn=False)` everywhere for the next 24h - it's not enough to do it once.
 
 ## AutoConfig, AutoTokenizer, etc.
 
-One other change to do is to plug the newly ported model into the automated model `transformers` system. This is used primarily on the [models website](https://huggingface.co/models) to load the model configuration, tokenizer and the main class without providing any specific class names. For example, in the case of `FSMT` one can do:
+One other change I needed to do is to plug the newly ported model into the automated model `transformers` system. This is used primarily on the [models website](https://huggingface.co/models) to load the model configuration, tokenizer and the main class without providing any specific class names. For example, in the case of `FSMT` one can do:
 
 ```
 from transformers import AutoTokenizer, AutoModelWithLMHead
@@ -668,13 +670,13 @@ model = AutoModelWithLMHead.from_pretrained(mname)
 ```
 
 There are 3 `*auto*` files that have the maps that make this possible,
-
+```
 -rw-rw-r-- 1 stas stas 16K Sep 23 13:53 src/transformers/configuration_auto.py
 -rw-rw-r-- 1 stas stas 65K Sep 23 13:53 src/transformers/modeling_auto.py
--rw-rw-r-- 1 stas stas 62K Sep 17 11:17 src/transformers/modeling_tf_auto.py
 -rw-rw-r-- 1 stas stas 13K Sep 23 13:53 src/transformers/tokenization_auto.py
+```
 
-Then the are the pipelines, which completely hide all the NLP complexities from the end user and provide a very simple API to just pick a model and use it for a task at hand. e.g.:
+Then the are the pipelines, which completely hide all the NLP complexities from the end user and provide a very simple API to just pick a model and use it for a task at hand. For example here is how one could perform a summarization task using the `pipeline`:
 
 ```
 summarizer = pipeline("summarization", model="t5-base", tokenizer="t5-base")
@@ -683,7 +685,7 @@ print(summary)
 ```
 The translation pipelines are a work in progress as of this writing, watch [this document](https://huggingface.co/transformers/main_classes/pipelines.html) for updates for when translation will be supported (currently only a few specific models/languages are supported).
 
-Finally, there is `src/transforers/__init__.py` to edit so that one can do:
+Finally, there is `src/transforers/__init__.py` to edit so that one could do:
 ```
 from transformers import FSMTTokenizer, FSMTForConditionalGeneration
 ```
@@ -694,7 +696,7 @@ from transformers.modeling_fsmt import FSMTForConditionalGeneration
 ```
 but either way works.
 
-To find all the places I needed to plug FSMT in, I mimicked `BartConfig`, `BartForConditionalGeneration` and `BartTokenizer`. I just grepped which files had it and inserted corresponding entries for `FSMTConfig`, `FSMTForConditionalGeneration` and `FSMTTokenizer`.
+To find all the places I needed to plug FSMT in, I mimicked `BartConfig`, `BartForConditionalGeneration` and `BartTokenizer`. I just `grep`ped which files had it and inserted corresponding entries for `FSMTConfig`, `FSMTForConditionalGeneration` and `FSMTTokenizer`.
 ```
 $ egrep -l "(BartConfig|BartForConditionalGeneration|BartTokenizer)" src/transformers/*.py | egrep -v "(marian|bart|pegasus|rag|fsmt)"
 src/transformers/configuration_auto.py
@@ -704,51 +706,54 @@ src/transformers/modeling_auto.py
 src/transformers/pipelines.py
 src/transformers/tokenization_auto.py
 ```
-In the grep search I excluded the subclasses that also include those classes.
+In the `grep` search I excluded the subclasses that also include those classes.
 
 
 ## Manual testing
 
 Until now I was primarily using my own scripts to do the testing.
 
-Once I had the translator work, I ported the reversed `ru-en` model and wrote two paraphrase scripts: 
+Once I had the translator working, I converted the reversed `ru-en` model and the wrote two paraphrase scripts: 
 
-* [fseq-paraphrase](./scripts/fseq-paraphrase.py)
-* [fsmt-paraphrase](./scripts/fsmt-paraphrase.py)
+* [fseq-paraphrase](https://github.com/stas00/porting/tree/master/transformers/fairseq-wmt19/scripts/fseq-paraphrase.py)
+* [fsmt-paraphrase](https://github.com/stas00/porting/tree/master/transformers/fairseq-wmt19/scripts/fsmt-paraphrase.py)
+which took a sentence in an original language, translated it to another language and then translated the result of that back to the original language. This process usually results in a paraphrased outcome, due to differences in how different languages express similar things.
 
-Found some more problems with the detokenizer, stepped through with the debugger and made those match.
+With the help of these scripts I found some more problems with the detokenizer, stepped through with the debugger and made the fsmt script produce the same results as the original.
 
-At this stage no-beam search was producing mostly identical results, but there was still some divergence in the beam search. In order to identify the special cases, I wrote a [fsmt-port-validate.py](./scripts/fsmt-port-validate.py) script that used as inputs `sacrebleu` test data and it run that data through both `fairseq` and `transformers` translation and reported only mismatches. Once I saw the pattern I then was able to fix those issues as well.
+At this stage no-beam search was producing mostly identical results, but there was still some divergence in the beam search. In order to identify the special cases, I wrote a [fsmt-port-validate.py](https://github.com/stas00/porting/tree/master/transformers/fairseq-wmt19/scripts/fsmt-port-validate.py) script that used as inputs `sacrebleu` test data and it run that data through both `fairseq` and `transformers` translation and reported only mismatches. It quickly identified a few remaining problems and observing the patterns I was able to fix those issues as well.
 
 
 
 ## Porting other models
 
-I next decided to port the `en-de` and `de-en` models. I was surprised to discover that this wasn't built the same way. It had a merged dictionary, so for a moment I felt frustration since I thought I'd now have to do another huge change to support that. But alas, I didn't need to make any changes, as the merged dictionary fit in without needing any changes. I just used 2 identical dictionaries - one as source and another copy as a target.
+I next proceeded to port the `en-de` and `de-en` models. 
 
-I wrote another script to test all ported models' basic functionality: [fsmt-test-all.py](./scripts/fsmt-test-all.py).
+I was surprised to discover that these weren't built in the same way. Each of these had a merged dictionary, so for a moment I felt frustration since I thought I'd now have to do another huge change to support that. But alas, I didn't need to make any changes, as the merged dictionary fit in without needing any changes. I just used 2 identical dictionaries - one as a source and a copy of it as a target.
+
+I wrote another script to test all ported models' basic functionality: [fsmt-test-all.py](https://github.com/stas00/porting/tree/master/transformers/fairseq-wmt19/scripts/fsmt-test-all.py).
 
 ## Test Coverage
 
-In the test suite most tests that deal with large models are marked as `@slow` and those don't get to run normally on CI (Continual Integration), as they are, well, slow. So we need to also create a tiny model, that has the same structure, but it's small and it has random weights. This tiny model is then can be used to test the ported functionality. It just can't be used for quality testing, since it has just a few weights and thus can't really be trained to do anything practical. [fsmt-make-tiny-model.py](./scripts/fsmt-make-tiny-model.py) creates a tiny model.  The generated model with all of its dict and config files was just 3MB in size. I uploaded to `s3` using `transformers-cli upload` and now I was able to use it in the test suite.
+In the test suite most tests that deal with large models are marked as `@slow` and those don't get to run normally on CI (Continual Integration), as they are, well, slow. So I needed to also create a tiny model, that has the same structure, but it's small and has random weights. This tiny model is then can be used to test the ported functionality. It just can't be used for quality testing, since it has just a few weights and thus can't really be trained to do anything practical. [fsmt-make-tiny-model.py](https://github.com/stas00/porting/tree/master/transformers/fairseq-wmt19/scripts/fsmt-make-tiny-model.py) creates such a tiny model.  The generated model with all of its dictionary and config files was just 3MB in size. I uploaded it to `s3` using `transformers-cli upload` and now I was able to use it in the test suite.
 
-Just like with the code, I started by copying `tests/test_modeling_bart.py` and converting it to use `FSMT`, and then tweaked it to make it to work for the new model.
+Just like with the code, I started by copying `tests/test_modeling_bart.py` and converting it to use `FSMT`, and then tweaked it to make it to work with the new model.
 
-I then converted a few of my scripts I used for testing into unittests - that was easy. 
+I then converted a few of my scripts I used for testing into unit tests - that was easy. 
  
-`transformers` has a huge set of common tests that each model runs through - I had to do some more tweaks to make these tests work for `FSMT` (primarily to adjust for the 2 dictionary setup) and I had to override to skip a few tests that weren't possible to run due to the uniqueness of this model. 
+`transformers` has a huge set of common tests that each model runs through - I had to do some more tweaks to make these tests work for `FSMT` (primarily to adjust for the 2 dictionary setup) and I had to override a few tests, that weren't possible to run due to the uniqueness of this model, in order to skip them. You can see the results [here](https://github.com/huggingface/transformers/blob/129fdae04033fe4adfe013b734deaec6ec34ae2e/tests/test_tokenization_fsmt.py) 
 
 I added one more test that performs a light BLEU evaluation - I used just 8 text inputs for each of the 4 models and measured BLEU scores on those. Here is the [test](https://github.com/huggingface/transformers/blob/129fdae04033fe4adfe013b734deaec6ec34ae2e/examples/seq2seq/test_fsmt_bleu_score.py) and the [script that generated data](https://github.com/huggingface/transformers/blob/129fdae04033fe4adfe013b734deaec6ec34ae2e/examples/seq2seq/test_data/fsmt/build-eval-data.py).
 
 ## SinusoidalPositionalEmbedding
 
-`fairseq` used a slightly different implementation of `SinusoidalPositionalEmbedding` than the one used by `transformers`. Initially I copied the `fairseq` implementation. But when trying to get the test suite to work I couldn't get the `torchscript` tests to pass. `SinusoidalPositionalEmbedding` was written so that it won't be part of `state_dict` and not get saved with the model weights - all the weights generated by this class are deterministic and not trained. `fairseq` used a trick to make this work transparently by not making its weights a parameter or a buffer, and then during `forward` switching the weight to the correct device. `torchscript` wasn't handling this well as it wanted all the weights to be on the correct device before the first `forward` call.
+`fairseq` used a slightly different implementation of `SinusoidalPositionalEmbedding` than the one used by `transformers`. Initially I copied the `fairseq` implementation. But when trying to get the test suite to work I couldn't get the `torchscript` tests to pass. `SinusoidalPositionalEmbedding` was written so that it won't be part of `state_dict` and not get saved with the model weights - all the weights generated by this class are deterministic and are not trained. `fairseq` used a trick to make this work transparently by not making its weights a parameter or a buffer, and then during `forward` switching the weights to the correct device. `torchscript` wasn't handling this well as it wanted all the weights to be on the correct device before the first `forward` call.
 
-I had to rewrite the implementation to convert it to a normal `nn.Embedding` subclass and then add functionality not to save the weights during `save_pretrained()` and not to complain if it doesn't find those weights during `from_pretrained()`, when the weights are getting loaded.
+I had to rewrite the implementation to convert it to a normal `nn.Embedding` subclass and then add functionality to not save these weights during `save_pretrained()` and for `from_pretrained()` to not complain if it can't find those weights during the `state_dict` loading.
 
 ## Evaluation
 
-I knew that the ported model was doing quite well based on my manual testing with a large body of text, but I didn't know how well the ported model performed compared to the original. So it was time to do evaluation. 
+I knew that the ported model was doing quite well based on my manual testing with a large body of text, but I didn't know how well the ported model performed compared to the original. So it was time to evaluate.
 
 For the task of translation [BLEU score](https://en.wikipedia.org/wiki/BLEU) is used as an evaluation metric. `transformers`
 has a script [run_eval.py](https://github.com/huggingface/transformers/blob/129fdae04033fe4adfe013b734deaec6ec34ae2e/examples/seq2seq/run_eval.py`) to perform the evaluation.
@@ -772,21 +777,21 @@ which took a few minutes to run and returned:
 ```
 {'bleu': 39.0498, 'n_obs': 2000, 'runtime': 184, 'seconds_per_sample': 0.092, 'num_beams': 5, 'length_penalty': 1.1, 'info': 'ru-en'}
 ```
-You can see that the BLEU score was `39.0498` and that it evaluated using 2000 test inputs, provided by `sacrebleu` using the wmt19 dataset.
+You can see that the BLEU score was `39.0498` and that it evaluated using 2000 test inputs, provided by `sacrebleu` using the `wmt19` dataset.
 
-Remember, I couldn't use the model ensemble, so I next needed to find the best performing checkpoint. For that purpose I wrote a script [fsmt-bleu-eval-each-chkpt.py](./scripts/fsmt-bleu-eval-each-chkpt.sh) which re-converted the model for each model, run the eval script and report the best one. As a result I knew that `model4.pt` from the original was giving me the best performance.
+Remember, I couldn't use the model ensemble, so I next needed to find the best performing checkpoint. For that purpose I wrote a script [fsmt-bleu-eval-each-chkpt.py](https://github.com/stas00/porting/tree/master/transformers/fairseq-wmt19/scripts/fsmt-bleu-eval-each-chkpt.sh) which converted each checkpoint, run the eval script and reported the best one. As a result I knew that `model4.pt` was delivering the best performance.
 
-I wasn't getting the same BLEU scores as reported in the original paper, so I next needed to make sure that we are comparing the same things using the same tools. Through asking at the `fairseq` issue I was given the code that was used by `fairseq` developers to get their BLEU scores - you will find it [here](./scripts/fseq-reproduce-bleu.sh). But, alas, their method was using a re-ranking approach which wasn't disclosed. Moreover, they evaled on outputs before detokenization and not the real output, which apparently scores better. Bottom line - we weren't scoring in the same way. The paper [A Call for Clarity in Reporting BLEU Scores](https://arxiv.org/abs/1804.08771) invites developers to start using the same method for calculating the metrics (tldr: use `sacrebleu`).
+I wasn't getting the same BLEU scores as reported in the original paper, so I next needed to make sure that we were comparing the same data using the same tools. Through asking at the `fairseq` issue I was given the code that was used by `fairseq` developers to get their BLEU scores - you will find it [here](https://github.com/stas00/porting/tree/master/transformers/fairseq-wmt19/scripts/fseq-reproduce-bleu.sh). But, alas, their method was using a re-ranking approach which wasn't disclosed. Moreover, they evaled on outputs before detokenization and not the real output, which apparently scores better. Bottom line - we weren't scoring in the same way. The paper [A Call for Clarity in Reporting BLEU Scores](https://arxiv.org/abs/1804.08771) invites developers to start using the same method for calculating the metrics (tldr: use `sacrebleu`).
 
-Currently, this ported model is surely slightly behind the original on the BLEU scores, because model ensemble is not used, but it's impossible to tell the exact difference until the same measuring method is used.
+Currently, this ported model is slightly behind the original on the BLEU scores, because model ensemble is not used, but it's impossible to tell the exact difference until the same measuring method is used.
 
 ## Porting new models
 
-After uploading the 4 `fairseq` models [here](https://huggingface.co/models?filter=facebook&tag=fsmt) it was then suggested to port 3 wmt16 and 2 wmt19 AllenAI models 1 (Jungo Kasai, et al). The porting was a breeze, I just had to figure out how to put all the source files together as they were spread out through several unrelated archives and conversion worked without a hitch. 
+After uploading the 4 `fairseq` models [here](https://huggingface.co/models?filter=facebook&tag=fsmt) it was then suggested to port 3 `wmt16` and 2 `wmt19` AllenAI models (Jungo Kasai, et al). The porting was a breeze, I just had to figure out how to put all the source files together as they were spread out through several unrelated archives and the conversion worked without a hitch. 
 
-The only issue I discovered after porting is that I was getting a lower BLEU score. Jungo Kasai was very helpful at suggesting that a custom `length_penalty=0.6` was used, and once I plugged that in I was getting much better results.
+The only issue I discovered after porting is that I was getting a lower BLEU score than the original. Jungo Kasai, the original developer, was very helpful at suggesting that a custom `length_penalty=0.6` was used, and once I plugged that in I was getting much better results.
 
-As a result of this process a new script was written: [run_eval_search.py](https://github.com/huggingface/transformers/blob/129fdae04033fe4adfe013b734deaec6ec34ae2e/examples/seq2seq/run_eval_search.py`) which can be used to search various hyper-params to get the best BLEU scores. Here is an example of its usage:
+This discovery lead me to write a new script: [run_eval_search.py](https://github.com/huggingface/transformers/blob/129fdae04033fe4adfe013b734deaec6ec34ae2e/examples/seq2seq/run_eval_search.py`), which can be used to search various hyper-parameters to get the best BLEU scores. Here is an example of its usage:
 
 ```
 # search space
@@ -800,7 +805,7 @@ sacrebleu -t wmt19 -l $PAIR --echo ref > $DATA_DIR/val.target
 PYTHONPATH="src:examples/seq2seq" python examples/seq2seq/run_eval_search.py stas/wmt19-$PAIR $DATA_DIR/val.source $SAVE_DIR/test_translations.txt --reference_path $DATA_DIR/val.target --score_path $SAVE_DIR/test_bleu.json --bs $BS --task translation --search="num_beams=5:8:11:15 length_penalty=0.6:0.7:0.8:0.9:1.0:1.1 early_stopping=true:false"
 ```
 
-Here it searches though all the combinations of `num_beams`, `length_penalty` and `early_stopping`.
+Here it searches though all the possible combinations of `num_beams`, `length_penalty` and `early_stopping`.
 
 Once finished executing it reports:
 ```
@@ -817,9 +822,9 @@ bleu  | num_beams | length_penalty | early_stopping
 38.92 |        15 |            1.1 |              1
 [...]
 ```
-You can see clearly that a wider beam size delivers better results. And in the case of `transformers` `early_stopping=False` performs better (in `fairseq` they use `early_stopping=True` equivalent).
+You can see clearly that a wider beam size delivers better results. And in the case of `transformers` `early_stopping=False` performs better (`fairseq` uses the `early_stopping=True` equivalent).
 
-So for the 5 new models I used this script to find the best default parameters and I used those when converting the model. The user can still override those when running `generate()`, but why not give the best defaults.
+So for the 5 new models I used this script to find the best default parameters and I used those when converting the model. The user can still override these parameters, when invoking `generate()`, but why not provide the best defaults.
 
 You will find the 5 ported AllenAI models [here](https://huggingface.co/models?filter=allenai&tag=fsmt).
 
@@ -831,10 +836,9 @@ As each ported group of models has its own nuances, I made dedicated scripts to 
 
 ### model cards
 
-One other important thing is that it's not enough to port a model and make it available to others. One needs to provide information on how to use it, nuances about hyper parameters, sources of datasets, evaluation metrics, etc. This is all done by creating model cards, which is just a `README.md` file, that start with some metadata that is used by the models website, followed by all the useful information that can be shared. 
+One other important thing is that it's not enough to port a model and make it available to others. One needs to provide information on how to use it, nuances about hyper parameters, sources of datasets, evaluation metrics, etc. This is all done by creating model cards, which is just a `README.md` file, that starts with some metadata that is used by [the models website](https://huggingface.co/models), followed by all the useful information that can be shared. 
 
-For example, the [facebook/wmt19-en-ru model card]
-(https://github.com/huggingface/transformers/tree/129fdae04033fe4adfe013b734deaec6ec34ae2e/model_cards/facebook/wmt19-en-ru/README.md). Here is its top:
+For example, let's take [the `facebook/wmt19-en-ru` model card](https://github.com/huggingface/transformers/tree/129fdae04033fe4adfe013b734deaec6ec34ae2e/model_cards/facebook/wmt19-en-ru/README.md). Here is its top:
 
 
 ```
@@ -867,7 +871,11 @@ As you can see we define the languages, tags, license, datasets, and metrics. Th
 
 ## Documentation
 
-Most of the documentation is autogenerated. As before I copied `docs/source/model_doc/bart.rst` and adapted it to my needs and when ready linked to it by adding `fsmt` entry inside `docs/source/index.rst`
+Finally, the documentation needed to be added.
+
+Luckily, most of the documentation is autogenerated from the docstrings in the module files. 
+
+As before, I copied `docs/source/model_doc/bart.rst` and adapted it to `FSMT`. When it was ready I linked to it by adding `fsmt` entry inside `docs/source/index.rst`
 
 I used:
 ```
@@ -879,7 +887,9 @@ The final source document is: [docs/source/model_doc/fsmt.rst](https://github.co
 
 ## It's PR time
 
-Once I felt my work was quite complete, I was ready to submit my PR. Since this work took many commits, I wanted to make a clean PR, so I used the following technique to squash all the commits into one in a new branch. This kept all the initial commits in place if I wanted to access any of them.
+Once I felt my work was quite complete, I was ready to submit my PR. 
+
+Since this work involved many git commits, I wanted to make a clean PR, so I used the following technique to squash all the commits into one in a new branch. This kept all the initial commits in place if I wanted to access any of them later.
 
 The branch I was developing on was called `fair-wmt`, and the new branch that I was going to submit the PR from I named `fair-wmt-clean`, so what I did:
 
@@ -893,34 +903,36 @@ git push origin fair-wmt-clean
 
 Then I went to github and submitted this [PR](https://github.com/huggingface/transformers/pull/6940) based on the `fair-wmt-clean` branch.
 
-It took two weeks of several cycles of feedback followed by modifications, but eventually it was all satisfactory and it all got merged. While this process was going on, I was finding issues here and there, adding new tests, improved the documentation, etc., so it was time well spent.
+It took two weeks of several cycles of feedback, followed by modifications, and more such cycles. Eventually it was all satisfactory and the PR got merged. 
+
+While this process was going on, I was finding issues here and there, adding new tests, improving the documentation, etc., so it was time well spent.
 
 I subsequently filed a few more PRs with changes after I improved and reworked a few features, adding various build scripts, models cards, etc.
 
 Since the models I ported were belonging to `facebook` and `allenai` organizations, I had to ask Sam to move those model files from my account on `s3` to the corresponding organizations. 
 
 
-## Conclusions
+## Closing thoughts
 
-- At the moment, didn't port the model ensemble as `transformers` doesn't support it. One the plus size the download size of the final `facebook/wmt19-*` models  is 1.1GB and not 13GB as in the original. For some reason the original includes the optimizer state saved in the model - so it adds 4x2.2GB almost 9GB of dead weight for those who just want to download the model to use it as is to translate text.
+- While I couldn't port the model ensemble as `transformers` doesn't support it, on the plus side the download size of the final `facebook/wmt19-*` models  is 1.1GB and not 13GB as in the original. For some reason the original includes the optimizer state saved in the model - so it adds 4x2.2GB almost 9GB of dead weight for those who just want to download the model to use it as is to translate text.
 
-- While the job of porting looked very challenging at the beginning as I didn't know the internals of neither `transformers` nor `fairseq`, looking back it wasn't that difficult after all. This was primarily due to having most of the components already available for me in the various parts of `transformers` - I *just* needed to find parts that I needed, mostly borrowing heavily from other models, and then tweak them to do what I needed. This was true for both the code and the tests. It'd have been a much more difficult project if I had to write it all from scratch.
+- While the job of porting looked very challenging at the beginning as I didn't know the internals of neither `transformers` nor `fairseq`, looking back it wasn't that difficult after all. This was primarily due to having most of the components already available to me in the various parts of `transformers` - I *just* needed to find parts that I needed, mostly borrowing heavily from other models, and then tweak them to do what I needed. This was true for both the code and the tests. It'd have been a much more difficult project if I had to write it all from scratch. But finding the right parts wasn't easy.
 
 ## Appreciations
 
-- Having [Sam Shleifer](https://github.com/sshleifer) mentor me through this process was of an extreme help to me, both thanks to his technical support but just as importantly for inspiring and encouraging me when I was getting stuck, yet not doing the work for me. 
+- Having [Sam Shleifer](https://github.com/sshleifer) mentor me through this process was of an extreme help to me, both thanks to his technical support and just as importantly for inspiring and encouraging me when I was getting stuck.
 
 - The PR merging process took a good couple of weeks before it was accepted. During this stage, besides Sam, [Lysandre Debut](https://github.com/LysandreJik) and [Sylvain Gugger](https://github.com/sgugger) contributed a lot through their insights and suggestions, which I integrating into the codebase. 
 
-- I'm grateful to everybody who has contributed to `transformers` codebase, which paved the way for my work.
+- I'm grateful to everybody who has contributed to the `transformers` codebase, which paved the way for my work.
 
 ## Notes
 
 ### Autoprint all in Jupyter Notebook
 
-My jupyter notebook is configured to automatically print all expressions, so I don't have to explicitly `print()` them (the default behavior is to print only the last expression of each cell). So if you read the outputs in my notebooks they may not the be same as if you were to run them yourself.
+My jupyter notebook is configured to automatically print all expressions, so I don't have to explicitly `print()` them (the default behavior is to print only the last expression of each cell). So if you read the outputs in my notebooks they may not the be same as if you were to run them yourself, unless you have the same setup.
 
-You can achieve the same by adding to `~/.ipython/profile_default/ipython_config.py` (create it if you don't have one):
+You can enable the print-all feature in your jupyter notebook setup by adding to `~/.ipython/profile_default/ipython_config.py` (create it if you don't have one):
 
 ```
 c = get_config()
@@ -933,7 +945,7 @@ and restarting your jupyter notebook server.
 
 ### Links to github versions of files
 
-In order to ensure that links work if you read this article much later after it has been written, the links were made to a specific SHA version of the code and not necessarily the latest version. This is so that if files were renamed or removed you will still find the code this article is referring to. If you want to ensure you're looking at the latest version of the code, replace the hash code in the links with `master`. For example, a link:
+In order to ensure that all links work if you read this article much later after it has been written, the links were made to a specific SHA version of the code and not necessarily the latest version. This is so that if files were renamed or removed you will still find the code this article is referring to. If you want to ensure you're looking at the latest version of the code, replace the hash code in the links with `master`. For example, a link:
 ```
 https://github.com/huggingface/transformers/blob/129fdae04033fe4adfe013b734deaec6ec34ae2e/src/transformers/modeling_fsmt.py
 ```
