@@ -1,5 +1,21 @@
 ### wikihow ###
 
+# 0. pip install datasets
+# 1. manually download https://ucsb.app.box.com/s/ap23l8gafpezf4tq3wapr6u8241zz358 and save to some path
+# 2. adjust data_dir below to where it was downloaded
+# 3. run ./process.py
+
+output is data/test.*
+
+
+
+
+
+
+
+
+# this is old approach - discarded to better match the authors eval
+
 # 0. setup
 mkdir -p /hf/pegasus-datasets/wikihow/
 cd /hf/pegasus-datasets/wikihow/
@@ -25,19 +41,3 @@ python -m torch.distributed.launch --nproc_per_node=2  run_distributed_eval.py -
 # extra args to experiment with:
 --min_length 32
 --length_penalty 1.0
-
-
-# the source data is also available via HF's datasets
-
-# 1. manually download
-cd /hf/pegasus-datasets/wikihow/
-wget https://ucsb.app.box.com/s/ap23l8gafpezf4tq3wapr6u8241zz358
-wget https://ucsb.app.box.com/s/7yq601ijl1lzvlfu4rjdbbxforzd2oag
-
-# 2. load
-from datasets import load_dataset
-ds_all = load_dataset("wikihow", 'all', data_dir="/hf/pegasus-datasets/wikihow/")
-ds_sep = load_dataset("wikihow", 'sep', data_dir="/hf/pegasus-datasets/wikihow/")
-
-# 3. ...
-
