@@ -11,9 +11,16 @@ unzip valid_articles_.zip
 # 2. pre-process
 ./process.py
 
-# 3. eval
-python -m torch.distributed.launch --nproc_per_node=2  run_distributed_eval.py --model_name google/pegasus-wikihow --save_dir xsum_generations --data_dir /hf/pegasus-datasets/wikihow/data --prefix test --n_obs 100 --bs 4
+# 3. short eval (reference point)
+python -m torch.distributed.launch --nproc_per_node=2  run_distributed_eval.py --model_name google/pegasus-wikihow --save_dir xsum_generations --data_dir /hf/pegasus-datasets/wikihow/data --prefix test --n_obs 100 --bs 4 --min_length 32
 
+# 4. full eval
+python -m torch.distributed.launch --nproc_per_node=2  run_distributed_eval.py --model_name google/pegasus-wikihow --save_dir xsum_generations --data_dir /hf/pegasus-datasets/wikihow/data --prefix test --bs 4 --min_length 32
+
+
+# extra args to experiment with:
+--min_length 32
+--length_penalty 1.0
 
 
 # the source data is also available via HF's datasets
