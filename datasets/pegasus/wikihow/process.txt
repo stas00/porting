@@ -1,0 +1,16 @@
+# @valhalla's instructions:
+
+gdown -O train_articles.zip --id 1-1CR6jh6StaI69AsbBXD8lQskFbGc2Ez # train
+gdown -O valid_articles_.zip --id 1-EGoT5ZKRNHQb_ewNpD9GZCvQ3uHzDSi # val
+gdown -O test_articles_.zip --id 1-CxzdzEIuBYzCs06zrglYrLBlLI6kjSZ # test 
+
+unzip
+
+./process.py
+
+
+
+# via datasets
+
+# 1. manually download 
+https://ucsb.app.box.com/s/ap23l8gafpezf4tq3wapr6u8241zz358 and save the file under <path/to/folder>/wikihowAll.csv 2) https://ucsb.app.box.com/s/7yq601ijl1lzvlfu4rjdbbxforzd2oag and save the file under <path/to/folder>/wikihowSep.csv
