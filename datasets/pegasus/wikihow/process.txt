@@ -1,4 +1,8 @@
-### Preprocess wikihow ###
+### wikihow ###
+
+# 0. setup
+mkdir -p /hf/pegasus-datasets/wikihow/
+cd /hf/pegasus-datasets/wikihow/
 
 # 1. get data: @valhalla's source
 gdown -O train_articles.zip --id 1-1CR6jh6StaI69AsbBXD8lQskFbGc2Ez # train
