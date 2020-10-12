@@ -1,0 +1,7 @@
+### newsroom ###
+
+# 1. get data
+curl https://s3.amazonaws.com/datasets.huggingface.co/summarization/newsroom-release.tar -O newsroom-release.tar
+
+
+
