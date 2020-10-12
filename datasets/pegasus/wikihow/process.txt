@@ -1,13 +1,22 @@
 ### wikihow ###
 
-# 0. pip install datasets
+# 0. setup
+
+pip install datasets
+
 # 1. manually download https://ucsb.app.box.com/s/ap23l8gafpezf4tq3wapr6u8241zz358 and save to some path
+
 # 2. adjust data_dir below to where it was downloaded
-# 3. run ./process.py
 
-output is data/test.*
+# 3. run
 
+./process.py
 
+# generated files to be fed into eval are ./data/test.*
+
+# 4. eval
+
+python -m torch.distributed.launch --nproc_per_node=2  run_distributed_eval.py --model_name google/pegasus-wikihow --save_dir xsum_generations --data_dir /hf/pegasus-datasets/wikihow/data  --prefix test  --n_obs 1000 --bs 4 --min_length 32
 
 
 
