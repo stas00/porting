@@ -55,7 +55,7 @@ def write_to_bin(lines, out_prefix):
 
     print("Finished writing files")
 
-def create_stories(save_path='wikihow'):
+def create_stories(save_path='data'):
     os.makedirs(save_path, exist_ok=True)
 
     lines = get_art_abs_wikihow('./test_articles')

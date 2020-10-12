@@ -1,16 +1,32 @@
-# @valhalla's instructions:
+### Preprocess wikihow ###
 
+# 1. get data: @valhalla's source
 gdown -O train_articles.zip --id 1-1CR6jh6StaI69AsbBXD8lQskFbGc2Ez # train
 gdown -O valid_articles_.zip --id 1-EGoT5ZKRNHQb_ewNpD9GZCvQ3uHzDSi # val
 gdown -O test_articles_.zip --id 1-CxzdzEIuBYzCs06zrglYrLBlLI6kjSZ # test 
+unzip test_articles_.zip
+unzip train_articles.zip
+unzip valid_articles_.zip
 
-unzip
-
+# 2. pre-process
 ./process.py
 
+# 3. eval
+python -m torch.distributed.launch --nproc_per_node=2  run_distributed_eval.py --model_name google/pegasus-wikihow --save_dir xsum_generations --data_dir /hf/pegasus-datasets/wikihow/data --prefix test --n_obs 100 --bs 4
 
 
-# via datasets
 
-# 1. manually download 
-https://ucsb.app.box.com/s/ap23l8gafpezf4tq3wapr6u8241zz358 and save the file under <path/to/folder>/wikihowAll.csv 2) https://ucsb.app.box.com/s/7yq601ijl1lzvlfu4rjdbbxforzd2oag and save the file under <path/to/folder>/wikihowSep.csv
+# the source data is also available via HF's datasets
+
+# 1. manually download
+cd /hf/pegasus-datasets/wikihow/
+wget https://ucsb.app.box.com/s/ap23l8gafpezf4tq3wapr6u8241zz358
+wget https://ucsb.app.box.com/s/7yq601ijl1lzvlfu4rjdbbxforzd2oag
+
+# 2. load
+from datasets import load_dataset
+ds_all = load_dataset("wikihow", 'all', data_dir="/hf/pegasus-datasets/wikihow/")
+ds_sep = load_dataset("wikihow", 'sep', data_dir="/hf/pegasus-datasets/wikihow/")
+
+# 3. ...
+
