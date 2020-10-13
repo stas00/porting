@@ -9,3 +9,18 @@ The nb already contains the code to download the ftp dump from which the extract
 get all *gz under:
 - ftp://ftp.ncbi.nlm.nih.gov/pubmed/baseline/ (this is updated once a year)
 - ftp://ftp.ncbi.nlm.nih.gov/pubmed/updatefiles/ (these are the updates since baseline)
+
+
+# armancohan/long-summarization
+https://github.com/armancohan/long-summarization
+
+```
+gdown --id 1lvsqvsFi3W-pE1SqNZI0s8NR9rC1tsja
+unzip pubmed-dataset.zip
+rm -r __MACOSX
+mv pubmed-dataset data
+```
+
+```
+pip install jsonlines
+```
