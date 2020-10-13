@@ -22,8 +22,8 @@ with open(src_path, 'wt') as src_file, open(tgt_path, 'wt') as tgt_file:
         tgt = d["targets"].numpy().decode()
         src_len, tgt_len = len(src), len(tgt)
         
-        #  a threshold is used to remove short articles with long summaries as well as articles with no summary
-        if src_len and tgt_len and tgt_len < 0.75*src_len:
+        #  remove articles with no summary
+        if src_len and tgt_len:
             src = src.replace('\n', '<n>')
             tgt = tgt.replace('\n', '<n>')        
             src_file.write(src + '\n')
