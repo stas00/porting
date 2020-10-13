@@ -14,9 +14,23 @@ pip install datasets
 
 # generated files to be fed into eval are ./data/test.*
 
-# 4. eval
+# 4. short eval
 
-python -m torch.distributed.launch --nproc_per_node=2  run_distributed_eval.py --model_name google/pegasus-wikihow --save_dir xsum_generations --data_dir /hf/pegasus-datasets/wikihow/data  --prefix test  --n_obs 1000 --bs 4 --min_length 32
+python -m torch.distributed.launch --nproc_per_node=2 run_distributed_eval.py --model_name google/pegasus-wikihow --save_dir xsum_generations --data_dir /hf/pegasus-datasets/wikihow/data --prefix test --n_obs 100 --bs 4 --min_length 32
+
+
+# 5. full eval
+
+python -m torch.distributed.launch --nproc_per_node=2 run_distributed_eval.py --model_name google/pegasus-wikihow --save_dir xsum_generations --data_dir /hf/pegasus-datasets/wikihow/data --prefix test --bs 4 --min_length 32
+
+
+# 6. final data to upload
+cd ..
+tar -cvzf wikihow-test.tgz wikihow/data/test.*
+
+
+
+
 
 
 
@@ -41,10 +55,10 @@ unzip valid_articles_.zip
 ./process.py
 
 # 3. short eval (reference point)
-python -m torch.distributed.launch --nproc_per_node=2  run_distributed_eval.py --model_name google/pegasus-wikihow --save_dir xsum_generations --data_dir /hf/pegasus-datasets/wikihow/data --prefix test --n_obs 100 --bs 4 --min_length 32
+python -m torch.distributed.launch --nproc_per_node=2 run_distributed_eval.py --model_name google/pegasus-wikihow --save_dir xsum_generations --data_dir /hf/pegasus-datasets/wikihow/data --prefix test --n_obs 100 --bs 4 --min_length 32
 
 # 4. full eval
-python -m torch.distributed.launch --nproc_per_node=2  run_distributed_eval.py --model_name google/pegasus-wikihow --save_dir xsum_generations --data_dir /hf/pegasus-datasets/wikihow/data --prefix test --bs 4 --min_length 32
+python -m torch.distributed.launch --nproc_per_node=2 run_distributed_eval.py --model_name google/pegasus-wikihow --save_dir xsum_generations --data_dir /hf/pegasus-datasets/wikihow/data --prefix test --bs 4 --min_length 32
 
 
 # extra args to experiment with:

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# this script prepares data for pegasus/pubmed eval
+# this script prepares data for pegasus/gigaword eval
 
 # 0. pip install pegasus
 # 1. ./process.py
@@ -9,7 +9,7 @@
 from pegasus.data import all_datasets
 from pathlib import Path
 
-input_pattern = "tfds:scientific_papers/pubmed"
+input_pattern = "tfds:gigaword"
 split = "test"
 ds_test = all_datasets.get_dataset(input_pattern + "-" + split, shuffle_files=False)
 

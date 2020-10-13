@@ -11,9 +11,9 @@
 from datasets import load_dataset
 from pathlib import Path
 
-data_dir = "/hf/pegasus-datasets/wikihow/"
+data_dir = "/hf/pegasus-datasets/pubmed/"
 
-ds_all = load_dataset("wikihow", 'all', data_dir=data_dir)
+ds_all = load_dataset("pubmed", 'all', data_dir=data_dir)
 
 ds_test = ds_all['test']
 
