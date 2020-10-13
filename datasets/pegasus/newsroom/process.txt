@@ -4,6 +4,14 @@
 
 pip install pegasus
 
+# manual download and prep
+mkdir -p ~/tensorflow_datasets/downloads/manual/
+cd ~/tensorflow_datasets/downloads/manual/
+curl https://s3.amazonaws.com/datasets.huggingface.co/summarization/newsroom-release.tar -O newsroom-release.tar
+tar -xvf newsroom-release.tar
+mv release/* .
+gzip -d *.gz
+
 # 1. run
 
 ./process.py

@@ -6,6 +6,9 @@
 # 0.
 # pip install pegasus
 # pip install tensorflow_datasets -U
+
+# note: since many of these datasets require manual building before they can be used, you will have to read the specific `process.txt` file under the corresponding to the dataset sub-dir
+
 # 1. ./process-all.py
 
 from pegasus.data import all_datasets
@@ -18,12 +21,12 @@ dss = dict(
     cnn_dailymail="tfds:cnn_dailymail/plain_text",
 #    gigaword="tfds:gigaword",
     multi_news="tfds:multi_news",
-#    newsroom="tfds:newsroom",
+    newsroom="tfds:newsroom",
     reddit_tifu="tfds_transformed:reddit_tifu/long",
     arxiv="tfds:scientific_papers/arxiv",
     pubmed="tfds:scientific_papers/pubmed",
     wikihow="tfds:wikihow/all",
-#    xsum="tfds:xsum",
+    xsum="tfds:xsum",
 )
 
 RULE75 = False
@@ -33,9 +36,17 @@ splits = ['test'] if TEST_ONLY else ['test', 'validation', 'train']
 
 
 for dataset_name, input_pattern in dss.items():
+    ds_ok = True
     for split in splits:
-        ds = all_datasets.get_dataset(input_pattern + "-" + split, shuffle_files=False)
-
+        if not ds_ok: continue
+        try:
+            ds = all_datasets.get_dataset(input_pattern + "-" + split, shuffle_files=False)
+        except:
+            ds_ok = False
+            print(f"✗ {dataset_name} requires manual building once. "
+                  "See {dataset_name}/process.txt for instructions")
+            continue
+            
         save_path = Path(f"data/{dataset_name}")
         save_path.mkdir(parents=True, exist_ok=True)
         src_path = save_path / f"{split}.source"
@@ -59,5 +70,5 @@ for dataset_name, input_pattern in dss.items():
                 src_file.write(src + '\n')
                 tgt_file.write(tgt + '\n')        
 
-        print(f"Generated {src_path}")
-        print(f"Generated {tgt_path}")
+        print(f"✓ {src_path}")
+        print(f"✓ {tgt_path}")
