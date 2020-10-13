@@ -3,12 +3,7 @@
 
 # this script prepares data for pegasus/bigpatent eval
 
-# see process.txt for instructions
-# pip install pegasus
-# 
-# ln -s ~/nltk_data /home/stas/anaconda3/envs/main-38/lib/python3.8/site-packages/nltk/
-
-# 1. ./process.py
+# see ./process.txt for instructions
 
 from pegasus.data import all_datasets
 from pathlib import Path
