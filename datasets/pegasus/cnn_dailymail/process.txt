@@ -1,4 +1,4 @@
-### wikihow ###
+### cnn_dailymail ###
 
 # 0. setup
 

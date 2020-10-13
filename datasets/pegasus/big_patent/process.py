@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# this script prepares data for pegasus/bigpatent eval
+# this script prepares data for pegasus/big_patent eval
 
 # see ./process.txt for instructions
 

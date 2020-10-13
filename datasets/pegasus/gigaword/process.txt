@@ -1,4 +1,4 @@
-### wikihow ###
+### gigaword ###
 
 # 0. setup
 

@@ -1,4 +1,4 @@
-### wikihow ###
+### newsroom ###
 
 # 0. setup
 

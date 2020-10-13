@@ -1,4 +1,4 @@
-### wikihow ###
+### multi_news ###
 
 # 0. setup
 
