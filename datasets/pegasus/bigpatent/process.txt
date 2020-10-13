@@ -27,15 +27,15 @@ python -m tensorflow_datasets.scripts.download_and_prepare --datasets=big_patent
 
 # 3. short eval
 
-python -m torch.distributed.launch --nproc_per_node=2 run_distributed_eval.py --model_name google/pegasus-bigpatent_all --save_dir xsum_generations --data_dir /hf/pegasus-datasets/bigpatent_all/data --prefix test --n_obs 100 --bs 4 --min_length 32
+python -m torch.distributed.launch --nproc_per_node=2 run_distributed_eval.py --model_name google/pegasus-bigpatent --save_dir xsum_generations --data_dir /hf/pegasus-datasets/bigpatent/data --prefix test --n_obs 100 --bs 4 --min_length 32
 
 # 4. full eval
 
-python -m torch.distributed.launch --nproc_per_node=2 run_distributed_eval.py --model_name google/pegasus-bigpatent_all --save_dir xsum_generations --data_dir /hf/pegasus-datasets/bigpatent_all/data --prefix test --bs 4 --min_length 32
+python -m torch.distributed.launch --nproc_per_node=2 run_distributed_eval.py --model_name google/pegasus-bigpatent --save_dir xsum_generations --data_dir /hf/pegasus-datasets/bigpatent/data --prefix test --bs 4 --min_length 32
 
 # 5. final data to upload
 cd ..
-tar -cvzf bigpatent_all-test.tgz bigpatent_all/data/test.*
+tar -cvzf bigpatent-test.tgz bigpatent/data/test.*
 
 
 
