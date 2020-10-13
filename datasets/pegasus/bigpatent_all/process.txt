@@ -1,0 +1,26 @@
+### wikihow ###
+
+# 0. setup
+
+pip install pegasus
+
+# 1. run
+
+./process.py
+
+# generated files to be fed into eval are ./data/test.*
+
+# 2. short eval
+
+python -m torch.distributed.launch --nproc_per_node=2 run_distributed_eval.py --model_name google/pegasus-bigpatent_all --save_dir xsum_generations --data_dir /hf/pegasus-datasets/bigpatent_all/data --prefix test --n_obs 100 --bs 4 --min_length 32
+
+# 3. full eval
+
+python -m torch.distributed.launch --nproc_per_node=2 run_distributed_eval.py --model_name google/pegasus-bigpatent_all --save_dir xsum_generations --data_dir /hf/pegasus-datasets/bigpatent_all/data --prefix test --bs 4 --min_length 32
+
+# 4. final data to upload
+cd ..
+tar -cvzf bigpatent_all-test.tgz bigpatent_all/data/test.*
+
+
+
