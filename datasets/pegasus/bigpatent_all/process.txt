@@ -4,21 +4,36 @@
 
 pip install pegasus
 
-# 1. run
+# nltk and data
+python -c "import nltk; nltk.download()"
+
+# tfds expects `ntlk_data` under the python package  (.../lib/python3.8/site-packages/nltk/)
+# if your `nltk_data` is not under nltk package, like mine which is under ~/nltk_data, you can either set:
+export NLTK_DATA="~/nltk_data"
+# or symlink (adjust the path)
+ln -s ~/nltk_data /home/stas/anaconda3/envs/main-38/lib/python3.8/site-packages/nltk/
+
+
+# 1. then manually build the dataset (from: https://www.tensorflow.org/datasets/beam_datasets#locally)
+# this is going to take a really really long time - it will use just one CPU.
+
+python -m tensorflow_datasets.scripts.download_and_prepare --datasets=big_patent/all
+
+# 2. run
 
 ./process.py
 
 # generated files to be fed into eval are ./data/test.*
 
-# 2. short eval
+# 3. short eval
 
 python -m torch.distributed.launch --nproc_per_node=2 run_distributed_eval.py --model_name google/pegasus-bigpatent_all --save_dir xsum_generations --data_dir /hf/pegasus-datasets/bigpatent_all/data --prefix test --n_obs 100 --bs 4 --min_length 32
 
-# 3. full eval
+# 4. full eval
 
 python -m torch.distributed.launch --nproc_per_node=2 run_distributed_eval.py --model_name google/pegasus-bigpatent_all --save_dir xsum_generations --data_dir /hf/pegasus-datasets/bigpatent_all/data --prefix test --bs 4 --min_length 32
 
-# 4. final data to upload
+# 5. final data to upload
 cd ..
 tar -cvzf bigpatent_all-test.tgz bigpatent_all/data/test.*
 

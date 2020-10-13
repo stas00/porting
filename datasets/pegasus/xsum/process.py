@@ -1,19 +1,15 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# this script prepares data for pegasus/bigpatent_all eval
+# this script prepares data for pegasus/xsum eval
 
-# see process.txt for instructions
-# pip install pegasus
-# 
-# ln -s ~/nltk_data /home/stas/anaconda3/envs/main-38/lib/python3.8/site-packages/nltk/
-
+# 0. pip install pegasus
 # 1. ./process.py
 
 from pegasus.data import all_datasets
 from pathlib import Path
 
-input_pattern = "tfds:big_patent/all"
+input_pattern = "tfds:xsum"
 split = "test"
 ds_test = all_datasets.get_dataset(input_pattern + "-" + split, shuffle_files=False)
 

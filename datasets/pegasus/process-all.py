@@ -3,7 +3,9 @@
 
 # this script prepares data for pegasus/billsum eval
 
-# 0. pip install pegasus
+# 0.
+# pip install pegasus
+# pip install tensorflow_datasets -U
 # 1. ./process-all.py
 
 from pegasus.data import all_datasets
@@ -11,16 +13,13 @@ from pathlib import Path
 
 dss = dict(
     aeslc="tfds:aeslc",
-#    bigpatent_all="tfds:big_patent/all",
-#    bigpatent_y="tfds:big_patent/y",
+#    bigpatent="tfds:big_patent/all",
     billsum="tfds_transformed:billsum",
     cnn_dailymail="tfds:cnn_dailymail/plain_text",
 #    gigaword="tfds:gigaword",
     multi_news="tfds:multi_news",
 #    newsroom="tfds:newsroom",
-#    newsroom_abstractive="tfds_transformed:newsroom_abstractive",
-    reddit_tifu_short="tfds_transformed:reddit_tifu/short",
-    reddit_tifu_long="tfds_transformed:reddit_tifu/long",
+    reddit_tifu="tfds_transformed:reddit_tifu/long",
     arxiv="tfds:scientific_papers/arxiv",
     pubmed="tfds:scientific_papers/pubmed",
     wikihow="tfds:wikihow/all",
@@ -28,9 +27,13 @@ dss = dict(
 )
 
 RULE75 = False
+TEST_ONLY = True
+
+splits = ['test'] if TEST_ONLY else ['test', 'validation', 'train']
+
 
 for dataset_name, input_pattern in dss.items():
-    for split in ['test', 'validation', 'train']:
+    for split in splits:
         ds = all_datasets.get_dataset(input_pattern + "-" + split, shuffle_files=False)
 
         save_path = Path(f"data/{dataset_name}")
