@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# this script prepares data for pegasus/billsum eval
+# this script prepares data for pegasus evals
 
 # 0.
 # pip install pegasus
