@@ -2,7 +2,7 @@
 
 # 0. setup
 
-pip install pegasus tensorflow
+pip install pegasus tensorflow apache_beam
 
 # nltk and data
 python -m nltk.downloader all
