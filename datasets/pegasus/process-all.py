@@ -13,6 +13,7 @@
 
 from pegasus.data import all_datasets
 from pathlib import Path
+import re
 
 dss = dict(
     aeslc="tfds:aeslc",
@@ -64,8 +65,9 @@ for dataset_name, input_pattern in dss.items():
                 if RULE75 and tgt_len >= 0.75*src_len:
                     continue
                 
-                src = src.replace('\n', '<n>')
-                tgt = tgt.replace('\n', '<n>')        
+                src = re.sub(r'[\r\n]+', '<n>', src)
+                tgt = re.sub(r'[\r\n]+', '<n>', tgt)
+                
                 src_file.write(src + '\n')
                 tgt_file.write(tgt + '\n')        
 
