@@ -16,24 +16,23 @@ from pathlib import Path
 
 dss = dict(
     aeslc="tfds:aeslc",
-#    bigpatent="tfds:big_patent/all",
+#    big_patent="tfds:big_patent/all", # can't build tfds:big_patent at the moment
     billsum="tfds_transformed:billsum",
     cnn_dailymail="tfds:cnn_dailymail/plain_text",
-#    gigaword="tfds:gigaword",
+    gigaword="tfds:gigaword",
     multi_news="tfds:multi_news",
     newsroom="tfds:newsroom",
     reddit_tifu="tfds_transformed:reddit_tifu/long",
     arxiv="tfds:scientific_papers/arxiv",
     pubmed="tfds:scientific_papers/pubmed",
     wikihow="tfds:wikihow/all",
-    xsum="tfds:xsum",
+#    xsum="tfds:xsum", # uses datasets' xsum - so use xsum/process.py
 )
 
 RULE75 = False
 TEST_ONLY = True
 
 splits = ['test'] if TEST_ONLY else ['test', 'validation', 'train']
-
 
 for dataset_name, input_pattern in dss.items():
     ds_ok = True

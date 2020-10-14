@@ -2,8 +2,6 @@
 
 # 0. setup
 
-pip install pegasus
-
 # 1. run
 
 ./process.py

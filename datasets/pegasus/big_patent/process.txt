@@ -17,7 +17,7 @@ ln -s ~/nltk_data /home/stas/anaconda3/envs/main-38/lib/python3.8/site-packages/
 # 1. then manually build the dataset (from: https://www.tensorflow.org/datasets/beam_datasets#locally)
 # this is going to take a really really long time - it will use just one CPU.
 
-python -m tensorflow_datasets.scripts.download_and_prepare --datasets=big_patent/all
+/usr/bin/nice -n 19 /usr/bin/ionice -n 0 python -m tensorflow_datasets.scripts.download_and_prepare --datasets=big_patent/all
 
 # 2. run
 
