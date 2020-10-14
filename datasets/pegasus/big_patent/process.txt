@@ -2,17 +2,14 @@
 
 # 0. setup
 
-pip install pegasus
+pip install pegasus tensorflow
 
 # nltk and data
-python -c "import nltk; nltk.download()"
+python -m nltk.downloader all
 
 # tfds expects `ntlk_data` under the python package  (.../lib/python3.8/site-packages/nltk/)
-# if your `nltk_data` is not under nltk package, like mine which is under ~/nltk_data, you can either set:
-export NLTK_DATA="~/nltk_data"
-# or symlink (adjust the path)
+# if your `nltk_data` is not under nltk package, like mine which is under ~/nltk_data, symlink (adjust the path)
 ln -s ~/nltk_data /home/stas/anaconda3/envs/main-38/lib/python3.8/site-packages/nltk/
-
 
 # 1. then manually build the dataset (from: https://www.tensorflow.org/datasets/beam_datasets#locally)
 # this is going to take a really really long time - it will use just one CPU.
