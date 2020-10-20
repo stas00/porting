@@ -8,7 +8,7 @@ This sub-repo contains links to evaluation datasets and also build scripts that 
 
 Datasets that we managed to build successfully and links to s3:
 
-dataset | full | test
+dataset | 3 splits | test split
 --------|------|-----
 aeslc | [full](https://cdn-datasets.huggingface.co/summarization/pegasus_data/aeslc.tar.gz) | [test-only](https://cdn-datasets.huggingface.co/summarization/pegasus_data/aeslc-test.tar.gz)
 arxiv | [full](https://cdn-datasets.huggingface.co/summarization/pegasus_data/arxiv.tar.gz) | [test-only](https://cdn-datasets.huggingface.co/summarization/pegasus_data/arxiv-test.tar.gz)
