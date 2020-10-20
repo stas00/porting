@@ -43,7 +43,7 @@ test.target
 
 Datasets that we couldn't figure out:
 
-* big_patent - we couldn't build this dataset, see https://github.com/google-research/pegasus/issues/114
+* big_patent - we couldn't build this arrow dataset, see https://github.com/google-research/pegasus/issues/114 - if you can help to build this it'd be amazing!
 
 For history purposes, here is the [issue](https://github.com/huggingface/transformers/issues/7647) where the process has been discussed.
 
@@ -51,7 +51,7 @@ For history purposes, here is the [issue](https://github.com/huggingface/transfo
 
 # Building data from scratch
 
-Should you want to build from scratch, use these notes.
+The following notes explain how to build the evaluation datasets from scratch.
 
 Currently the datasets are pulled from either `datasets` or `tfds` or `tfds_transformed`. 
 
@@ -59,7 +59,7 @@ For each dataset you will find a folder with `process.txt` that includes instruc
 
 The top-level `process-all.py` that builds most of them at once will only work once each was built via its folder's `process.txt`. This is because many of the datasets require a one-time manual download/tinkering.
 
-Most build scripts use `pegasus` which takes a bit of tinkering to install:
+Most build scripts use [`pegasus`](https://github.com/google-research/pegasus) which takes a bit of tinkering to install:
 
 ```
 git clone https://github.com/google-research/pegasus
