@@ -30,7 +30,9 @@ Currently the datasets are pulled from either `datasets` or `tfds` or `tfds_tran
 
 For each dataset you will find a folder with `process.txt` that includes instructions on how to build it.
 
-The top-level `process-all.py` that builds most of them at once will only work once each was built via its folder. This is because many of them require some manual tinkering.
+The top-level `process-all.py` that builds most of them at once will only work once each was built via its folder's `process.txt`. This is because many of the datasets require a one-time manual download/tinkering.
+
+# Problems
 
 If you encounter any problems with building eval data, please create an issue here. If you have any issue with outcomes this is an issue for [`transformers`](https://github.com/huggingface/transformers/issues).
 
