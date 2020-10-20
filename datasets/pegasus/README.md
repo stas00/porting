@@ -77,7 +77,9 @@ pip install datasets
 
 # Evaluation
 
-Each sub-folder's `process.txt` contains the command to run the evaluation. It assumes you have already installed `transformers` with its prerequisites:
+Each sub-folder's `process.txt` contains the command to run the evaluation for that particular dataset. 
+
+It assumes you have already installed `transformers` with its prerequisites:
 
 ```
 git clone https://github.com/huggingface/transformers/
@@ -92,6 +94,8 @@ cd ./examples/seq2seq
 as that's where the eval scripts are located.
 
 see `README.md` inside `examples/seq2seq` for additional information about eval scripts.
+
+Of course, if you haven't been using the scripts to build from scratch, you will need to download and untar the evaluation dataset before you can eval.
 
 
 # Problems
