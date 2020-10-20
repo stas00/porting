@@ -2,8 +2,8 @@
 # coding: utf-8
 
 # this script prepares data for pegasus/xsum eval
-
-# 0. pip install pegasus
+# 0. install pegasus (see README.md)
+# 0. pip install datasets
 # 1. ./process.py
 
 # this one is not working in tfds:xsum, so using datasets' xsum

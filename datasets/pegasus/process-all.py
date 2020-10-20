@@ -3,13 +3,29 @@
 
 # this script prepares data for pegasus evals
 
-# 0.
-# pip install pegasus
-# pip install tensorflow_datasets -U
+# 0. install the prerequisites (see README.md)
+#
+# note: since many of these datasets require manual building before they can be used, you will have to follow the instructions in each `process.txt` file under the corresponding to the dataset sub-dir
 
-# note: since many of these datasets require manual building before they can be used, you will have to read the specific `process.txt` file under the corresponding to the dataset sub-dir
+# set TEST_ONLY=False if you want to build all 3 splits and not just `test` in process.py and process-all.py scripts
 
-# 1. ./process-all.py
+# 1. build most of them
+# ./process-all.py
+
+# 2. build xsum
+# cd xsum
+# ./process.py
+# mv data ../data/xsum
+# cd -
+
+# 3. tar them all and upload to s3
+# cd data
+# find . -type d -maxdepth 1 -mindepth 1 -exec tar cvzf {}.tar.gz {}  \;
+# cd -
+# mkdir -p pegasus_data
+# cp data/*tgz pegasus_data
+# export ds=s3://datasets.huggingface.co
+# aws s3 sync pegasus_data $ds/summarization/pegasus_data
 
 from pegasus.data import all_datasets
 from pathlib import Path
@@ -17,7 +33,7 @@ import re
 
 dss = dict(
     aeslc="tfds:aeslc",
-#    big_patent="tfds:big_patent/all", # can't build tfds:big_patent at the moment
+    # big_patent="tfds:big_patent/all", # can't build tfds:big_patent at the moment, see https://github.com/google-research/pegasus/issues/114
     billsum="tfds_transformed:billsum",
     cnn_dailymail="tfds:cnn_dailymail/plain_text",
     gigaword="tfds:gigaword",
