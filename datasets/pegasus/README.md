@@ -8,17 +8,19 @@ This sub-repo contains links to evaluation datasets and also build scripts that 
 
 Datasets that we managed to build successfully and links to s3:
 
-* aeslc [full](https://cdn-datasets.huggingface.co/summarization/pegasus_data/aeslc.tar.gz), [test-only](https://cdn-datasets.huggingface.co/summarization/pegasus_data/aeslc-test.tar.gz)
-* arxiv [full](https://cdn-datasets.huggingface.co/summarization/pegasus_data/arxiv.tar.gz), [test-only](https://cdn-datasets.huggingface.co/summarization/pegasus_data/arxiv-test.tar.gz)
-* billsum [full](https://cdn-datasets.huggingface.co/summarization/pegasus_data/billsum.tar.gz), [test-only](https://cdn-datasets.huggingface.co/summarization/pegasus_data/billsum-test.tar.gz)
-* cnn_dailymail [full](https://cdn-datasets.huggingface.co/summarization/pegasus_data/cnn_dailymail.tar.gz), [test-only](https://cdn-datasets.huggingface.co/summarization/pegasus_data/cnn_dailymail-test.tar.gz)
-* gigaword [full](https://cdn-datasets.huggingface.co/summarization/pegasus_data/gigaword.tar.gz), [test-only](https://cdn-datasets.huggingface.co/summarization/pegasus_data/gigaword-test.tar.gz)
-* multi_news [full](https://cdn-datasets.huggingface.co/summarization/pegasus_data/multi_news.tar.gz), [test-only](https://cdn-datasets.huggingface.co/summarization/pegasus_data/multi_news-test.tar.gz)
-* newsroom [full](https://cdn-datasets.huggingface.co/summarization/pegasus_data/newsroom.tar.gz), [test-only](https://cdn-datasets.huggingface.co/summarization/pegasus_data/newsroom-test.tar.gz)
-* pubmed [full](https://cdn-datasets.huggingface.co/summarization/pegasus_data/pubmed.tar.gz), [test-only](https://cdn-datasets.huggingface.co/summarization/pegasus_data/pubmed-test.tar.gz)
-* reddit_tifu [full](https://cdn-datasets.huggingface.co/summarization/pegasus_data/reddit_tifu.tar.gz), [test-only](https://cdn-datasets.huggingface.co/summarization/pegasus_data/reddit_tifu-test.tar.gz)
-* wikihow [full](https://cdn-datasets.huggingface.co/summarization/pegasus_data/wikihow.tar.gz), [test-only](https://cdn-datasets.huggingface.co/summarization/pegasus_data/wikihow-test.tar.gz)
-* xsum [full](https://cdn-datasets.huggingface.co/summarization/pegasus_data/xsum.tar.gz), [test-only](https://cdn-datasets.huggingface.co/summarization/pegasus_data/xsum-test.tar.gz)
+dataset | full | test
+--------|------|-----
+aeslc | [full](https://cdn-datasets.huggingface.co/summarization/pegasus_data/aeslc.tar.gz) | [test-only](https://cdn-datasets.huggingface.co/summarization/pegasus_data/aeslc-test.tar.gz)
+arxiv | [full](https://cdn-datasets.huggingface.co/summarization/pegasus_data/arxiv.tar.gz) | [test-only](https://cdn-datasets.huggingface.co/summarization/pegasus_data/arxiv-test.tar.gz)
+billsum | [full](https://cdn-datasets.huggingface.co/summarization/pegasus_data/billsum.tar.gz) | [test-only](https://cdn-datasets.huggingface.co/summarization/pegasus_data/billsum-test.tar.gz)
+cnn_dailymail | [full](https://cdn-datasets.huggingface.co/summarization/pegasus_data/cnn_dailymail.tar.gz) | [test-only](https://cdn-datasets.huggingface.co/summarization/pegasus_data/cnn_dailymail-test.tar.gz)
+gigaword | [full](https://cdn-datasets.huggingface.co/summarization/pegasus_data/gigaword.tar.gz) | [test-only](https://cdn-datasets.huggingface.co/summarization/pegasus_data/gigaword-test.tar.gz)
+multi_news | [full](https://cdn-datasets.huggingface.co/summarization/pegasus_data/multi_news.tar.gz) | [test-only](https://cdn-datasets.huggingface.co/summarization/pegasus_data/multi_news-test.tar.gz)
+newsroom | [full](https://cdn-datasets.huggingface.co/summarization/pegasus_data/newsroom.tar.gz) | [test-only](https://cdn-datasets.huggingface.co/summarization/pegasus_data/newsroom-test.tar.gz)
+pubmed | [full](https://cdn-datasets.huggingface.co/summarization/pegasus_data/pubmed.tar.gz) | [test-only](https://cdn-datasets.huggingface.co/summarization/pegasus_data/pubmed-test.tar.gz)
+reddit_tifu | [full](https://cdn-datasets.huggingface.co/summarization/pegasus_data/reddit_tifu.tar.gz) | [test-only](https://cdn-datasets.huggingface.co/summarization/pegasus_data/reddit_tifu-test.tar.gz)
+wikihow | [full](https://cdn-datasets.huggingface.co/summarization/pegasus_data/wikihow.tar.gz) | [test-only](https://cdn-datasets.huggingface.co/summarization/pegasus_data/wikihow-test.tar.gz)
+xsum | [full](https://cdn-datasets.huggingface.co/summarization/pegasus_data/xsum.tar.gz) | [test-only](https://cdn-datasets.huggingface.co/summarization/pegasus_data/xsum-test.tar.gz)
 
 Each *full* archive includes the following files:
 
