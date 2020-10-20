@@ -77,7 +77,7 @@ pip install datasets
 
 # Evaluation
 
-Each sub-folder's `process.txt` contains the command to run the evaluation for that particular dataset. 
+Each sub-folder's `process.txt` contains the command to run the evaluation for that particular dataset.
 
 It assumes you have already installed `transformers` with its prerequisites:
 
@@ -106,6 +106,9 @@ If you manage to figure out how to build `big_patent`, see this [issue](https://
 
 ## Authors
 
-This area is a collaboration of @sshleifer, @patil-suraj and @stas00 (and more contributors are welcome)
+This area is a collaboration of [sshleifer](https://github.com/sshleifer), 
+[patil-suraj](https://github.com/patil-suraj) and 
+[stas00](https://github.com/stas00).
 
 
+ 
