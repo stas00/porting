@@ -11,11 +11,11 @@ wget https://cdn-datasets.huggingface.co/translation/wmt_en_ro.tar.gz
 tar -xvzf wmt_en_ro.tar.gz
 
 mkdir wmt_en_ro-tr100k-va0.5k-te0.5k
-head -100000 wmt_en_ro/test.source  > wmt_en_ro-tr100k-va0.5k-te0.5k/test.source
-head -100000 wmt_en_ro/test.target  > wmt_en_ro-tr100k-va0.5k-te0.5k/test.target
-head -500    wmt_en_ro/train.source > wmt_en_ro-tr100k-va0.5k-te0.5k/train.source
-head -500    wmt_en_ro/train.target > wmt_en_ro-tr100k-va0.5k-te0.5k/train.target
-head -500    wmt_en_ro/val.source   > wmt_en_ro-tr100k-va0.5k-te0.5k/val.source
+head -100000 wmt_en_ro/train.source > wmt_en_ro-tr100k-va0.5k-te0.5k/train.source         
+head -100000 wmt_en_ro/train.target > wmt_en_ro-tr100k-va0.5k-te0.5k/train.target         
+head -500    wmt_en_ro/test.source  > wmt_en_ro-tr100k-va0.5k-te0.5k/test.source          
+head -500    wmt_en_ro/test.target  > wmt_en_ro-tr100k-va0.5k-te0.5k/test.target          
+head -500    wmt_en_ro/val.source   > wmt_en_ro-tr100k-va0.5k-te0.5k/val.source           
 head -500    wmt_en_ro/val.target   > wmt_en_ro-tr100k-va0.5k-te0.5k/val.target
 tar -cvzf wmt_en_ro-tr100k-va0.5k-te0.5k.tar.gz wmt_en_ro-tr100k-va0.5k-te0.5k
 
@@ -27,4 +27,4 @@ now we can get it via:
 
 https://cdn-datasets.huggingface.co/translation/wmt_en_ro-tr100k-va0.5k-te0.5k.tar.gz
 
-The original was 56M, this one is just 256K.
+The original was 56M, this one is just 9.2M.
