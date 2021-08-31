@@ -6,8 +6,4 @@ This repo contains helper scripts that were used while porting various nlp model
 2. [transformers/deepspeed](transformers/deepspeed) - deepspeed helper files
 3. [transformers/translation](transformers/translation) - translation with transformers
 4. [datasets/pegasus](./datasets/pegasus/) - pegasus datasets
-5. 
-
-
-
-
+5. [pytorch](./pytorch) - pytorch solutions
